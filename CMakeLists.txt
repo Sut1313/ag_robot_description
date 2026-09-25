@@ -11,4 +11,7 @@ install(DIRECTORY urdf meshes config launch rviz worlds
         PATTERN "*.orig" EXCLUDE
         PATTERN "__pycache__" EXCLUDE)
 
+# 许可证与第三方署名随包安装 (MIT 要求许可声明随副本一并保留)
+install(FILES LICENSE NOTICE DESTINATION share/${PROJECT_NAME})
+
 ament_package()

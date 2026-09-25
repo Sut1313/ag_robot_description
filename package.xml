@@ -7,8 +7,8 @@
     (guide rails + column + prismatic lift + two AgileX PiPER arms) mounted at the front.
     The camera and laser are deliberately left out of the URDF for now.
   </description>
-  <maintainer email="you@example.com">you</maintainer>
-  <license>Proprietary</license>
+  <maintainer email="323442660+Sut1313@users.noreply.github.com">Sut1313</maintainer>
+  <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

@@ -1,0 +1,23 @@
+第三方素材署名 / Third-party notices
+=====================================
+
+本包整体以 MIT 许可分发（见 LICENSE）。以下文件来自第三方，按各自的原始许可使用，
+其版权与许可声明在此保留。
+
+1) AgileX PiPER 机械臂 —— 网格与关节参数
+   ------------------------------------------------------------------
+   涉及文件:
+     meshes/piper_base_link.dae   meshes/piper_base_link.stl
+     meshes/piper_link1.dae       meshes/piper_link1.stl
+     meshes/piper_link2.dae       meshes/piper_link2.stl
+     meshes/piper_link3.dae       meshes/piper_link3.stl
+     meshes/piper_link4.dae       meshes/piper_link4.stl
+     meshes/piper_link5.dae       meshes/piper_link5.stl
+     meshes/piper_link6.dae       meshes/piper_link6.stl
+     meshes/piper_flange.dae      meshes/piper_flange.stl
+     urdf/piper_arm.xacro         （各关节 origin/限位/速度/惯量参数）
+
+   来源:   https://github.com/agilexrobotics/agx_arm_urdf
+   许可:   MIT License, Copyright (c) 2026 aalicecc
+   说明:   本包未修改这些网格文件的内容；urdf/piper_arm.xacro 中的参数逐项与该
+           上游 URDF 核对一致。按 MIT 条款，上述版权声明与许可声明随本包一并保留。

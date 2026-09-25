@@ -332,6 +332,9 @@ SolidWorks 导出的 `.obj` 自带逐部件颜色（`ag_robot.mtl` 里 9 档灰�
 
 ## 十、许可与维护
 
-- **License**：见 `package.xml`（当前是占位值，公开前请确认）
-- **Maintainer**：见 `package.xml`
-- 机械臂模型与参数来自 [AgileX PiPER 官方 URDF](https://github.com/agilexrobotics/agx_arm_urdf)，遵循其原始许可
+- **License**：[MIT](LICENSE) — Copyright (c) 2026 Sut1313
+- **Maintainer**：`Sut1313`（见 `package.xml`）
+- **第三方素材署名**：`meshes/piper_*.dae`、`meshes/piper_*.stl` 以及 `urdf/piper_arm.xacro` 里的关节参数
+  来自 AgileX Robotics 的 [agx_arm_urdf](https://github.com/agilexrobotics/agx_arm_urdf)，
+  同样以 **MIT** 许可分发（Copyright (c) 2026 aalicecc）；本包按 MIT 条款保留其版权与许可声明，
+  详见 [`NOTICE`](NOTICE)，网格文件本体未做修改。
