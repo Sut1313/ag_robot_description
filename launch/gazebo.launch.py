@@ -16,6 +16,7 @@ SPAWN_Z = '0.003'
 def generate_launch_description():
     pkg = get_package_share_directory('ag_robot_description')
     xacro_file = os.path.join(pkg, 'urdf', 'AG_robot.urdf.xacro')
+    rviz_cfg = os.path.join(pkg, 'rviz', 'AG_robot.rviz')
 
     # URDF 里的 package://ag_robot_description/meshes/x.stl 由 sdformat 改写成
     # model://ag_robot_description/meshes/x.stl, 而 gz sim 只会去 GZ_SIM_RESOURCE_PATH
@@ -33,6 +34,7 @@ def generate_launch_description():
         value_type=str)
 
     gazebo_gui = LaunchConfiguration('gazebo_gui')
+    rviz = LaunchConfiguration('rviz')
 
     # 用自己的世界而不是 gz 自带的 empty.sdf: empty.sdf 的太阳垂直向下照, 竖直面只剩
     # 环境光, 整个模型没有明暗层次、看着发糊。worlds/ag_robot.sdf 里太阳是斜的、
@@ -51,6 +53,20 @@ def generate_launch_description():
     clock_bridge = Node(
         package='ros_gz_bridge', executable='parameter_bridge',
         arguments=['/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock'],
+        output='screen')
+
+    # GPU lidar 同时发布多层 LaserScan 与 PointCloudPacked。PointCloud2 才能完整表达
+    # 16 条垂直扫描线；ROS LaserScan 没有垂直维度字段，仅保留作底层数据调试。
+    lidar_bridge = Node(
+        package='ros_gz_bridge', executable='parameter_bridge',
+        arguments=[
+            '/velodyne/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            '/velodyne/scan/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked',
+        ],
+        remappings=[
+            ('/velodyne/scan', '/velodyne_scan'),
+            ('/velodyne/scan/points', '/velodyne_points'),
+        ],
         output='screen')
 
     spawn = Node(
@@ -72,10 +88,18 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('gazebo_gui', default_value='true',
                               description='false = 只跑 gz sim 服务端, 不开界面'),
+        DeclareLaunchArgument('rviz', default_value='true',
+                              description='true = 打开 RViz 并显示 VLP-16 点云'),
 
         gz_sim,
         gz_sim_headless,
         clock_bridge,
+        lidar_bridge,
+
+        Node(package='rviz2', executable='rviz2',
+             arguments=['-d', rviz_cfg],
+             parameters=[{'use_sim_time': True}],
+             condition=IfCondition(rviz), output='screen'),
 
         Node(package='robot_state_publisher', executable='robot_state_publisher',
              parameters=[{'robot_description': robot_description,

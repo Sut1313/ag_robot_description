@@ -21,3 +21,6 @@ __pycache__/
 # 需要做"按部件色拆分网格"时再本地保留即可。
 meshes/*.obj
 meshes/*.mtl
+
+# lidar_capture_png.py 的默认输出
+vlp16_scan.png

@@ -7,6 +7,7 @@ Panels:
         - /Global Options1
         - /RobotModel1/Links1
         - /TF1
+        - /VLP-16 PointCloud1
       Splitter Ratio: 0.5
     Tree Height: 557
 Visualization Manager:
@@ -36,10 +37,41 @@ Visualization Manager:
       Show Arrows: true
       Show Axes: true
       Show Names: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: AxisColor
+      Decay Time: 0.4
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 40; 40
+      Min Color: 40; 90; 255
+      Name: VLP-16 PointCloud
+      Position Transformer: XYZ
+      Queue Size: 10
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.025
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /velodyne_points
+      Use Fixed Frame: true
+      Use rainbow: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: base_footprint
+    Fixed Frame: base_link
     Frame Rate: 30
   Name: root
   Tools:

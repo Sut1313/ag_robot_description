@@ -1,0 +1,57 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <!-- ==================================================================
+       VLP-16 近场盲区校验靶板 —— 配合 scripts/lidar_target_check.py 使用。
+
+       四块 200x200 mm 靶板放在雷达四周, 最近面距雷达 0.40 / 0.48 / 0.52 / 0.68 m,
+       正好跨过 <range><min> = 0.5 m 这条边界: 前两块在最小量程内应当收不到回波,
+       后两块应当测到约 0.52 / 0.68 m。模型 pose 就是雷达光心位置与朝向
+       (0.114898 0 1.178486 0 0 +90 度), spawn 到世界原点附近即对齐 velodyne_link。
+
+       生成与校验的完整命令见 scripts/lidar_target_check.py 的文档字符串。
+       ================================================================== -->
+  <model name="vlp16_blindzone_targets">
+    <static>true</static>
+    <!-- Pose is the lidar scan origin; yaw aligns the model with velodyne_link. -->
+    <pose>0.114898 0 1.178486 0 0 1.57079632679</pose>
+    <link name="targets">
+      <!-- Nearest faces are at 0.40, 0.48, 0.52 and 0.68 m. -->
+      <collision name="target_040_collision">
+        <pose>0.42 0 0 0 0 0</pose>
+        <geometry><box><size>0.04 0.20 0.20</size></box></geometry>
+      </collision>
+      <visual name="target_040_visual">
+        <pose>0.42 0 0 0 0 0</pose>
+        <geometry><box><size>0.04 0.20 0.20</size></box></geometry>
+        <material><ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse></material>
+      </visual>
+      <collision name="target_048_collision">
+        <pose>0 0.50 0 0 0 0</pose>
+        <geometry><box><size>0.20 0.04 0.20</size></box></geometry>
+      </collision>
+      <visual name="target_048_visual">
+        <pose>0 0.50 0 0 0 0</pose>
+        <geometry><box><size>0.20 0.04 0.20</size></box></geometry>
+        <material><ambient>1 0.7 0 1</ambient><diffuse>1 0.7 0 1</diffuse></material>
+      </visual>
+      <collision name="target_052_collision">
+        <pose>-0.54 0 0 0 0 0</pose>
+        <geometry><box><size>0.04 0.20 0.20</size></box></geometry>
+      </collision>
+      <visual name="target_052_visual">
+        <pose>-0.54 0 0 0 0 0</pose>
+        <geometry><box><size>0.04 0.20 0.20</size></box></geometry>
+        <material><ambient>0 1 0 1</ambient><diffuse>0 1 0 1</diffuse></material>
+      </visual>
+      <collision name="target_068_collision">
+        <pose>0 -0.70 0 0 0 0</pose>
+        <geometry><box><size>0.20 0.04 0.20</size></box></geometry>
+      </collision>
+      <visual name="target_068_visual">
+        <pose>0 -0.70 0 0 0 0</pose>
+        <geometry><box><size>0.20 0.04 0.20</size></box></geometry>
+        <material><ambient>0 0.4 1 1</ambient><diffuse>0 0.4 1 1</diffuse></material>
+      </visual>
+    </link>
+  </model>
+</sdf>

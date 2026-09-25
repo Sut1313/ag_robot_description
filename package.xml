@@ -5,7 +5,7 @@
   <description>
     AG_robot: the fourwd_car chassis with the piper lift upper assembly
     (guide rails + column + prismatic lift + two AgileX PiPER arms) mounted at the front.
-    The camera and laser are deliberately left out of the URDF for now.
+    Includes a provisional Velodyne VLP-16 3D lidar link and Gazebo point-cloud simulation.
   </description>
   <maintainer email="323442660+Sut1313@users.noreply.github.com">Sut1313</maintainer>
   <license>MIT</license>

@@ -1,6 +1,6 @@
 # ag_robot_description
 
-**AG_robot** —— 一台四轮独立悬挂差速底盘 + 立柱/导轨丝杠升降台 + 两条松灵 **AgileX PiPER** 六轴机械臂的移动操作机器人，用 URDF/xacro 描述，配套 RViz 显示与 Gazebo Harmonic 仿真。
+**AG_robot** —— 一台四轮独立悬挂差速底盘 + 立柱/导轨丝杠升降台 + 两条松灵 **AgileX PiPER** 六轴机械臂 + **Velodyne VLP-16** 3D 激光雷达的移动操作机器人，用 URDF/xacro 描述，配套 RViz 显示与 Gazebo Harmonic 仿真。
 
 本包**完全自包含**：24 个网格全部在 `meshes/` 下，不依赖任何其他自研包。
 
@@ -15,7 +15,7 @@
 
 ### 1. 模型结构
 
-27 个 link / 26 个关节（9 固定 + 4 连续 + 12 旋转 + 1 平移），单一根节点：
+28 个 link / 27 个关节（10 固定 + 4 连续 + 12 旋转 + 1 平移），单一根节点：
 
 ```
 base_footprint                          地面投影帧, Nav2 用; 无几何、无惯量
@@ -23,6 +23,7 @@ base_footprint                          地面投影帧, Nav2 用; 无几何、�
    ├─ imu_link                          IMU 坐标系, 无几何(IMU 集成在主控上)
    ├─ wheel_1 … wheel_4                 四轮, continuous, 差速驱动
    └─ base_frame_link                   立柱 + 竖直导轨 + FBX150 电动推杆 (固定)
+      ├─ velodyne_link                  VLP-16 雷达，暂用圆柱体，固定在立柱顶部正中心
       └─ lift_platform_link             升降台: 卡在立柱两侧竖向 T 型槽里上下滑移 (prismatic, 0–0.40 m)
          ├─ arm1_base_link … arm1_tool0 松灵 PiPER 六轴臂 (revolute ×6 + 法兰 + tool0)
          └─ arm2_base_link … arm2_tool0 松灵 PiPER 六轴臂
@@ -33,15 +34,15 @@ base_footprint                          地面投影帧, Nav2 用; 无几何、�
 | 移动 | 四轮差速，`wheel_separation = 0.6038 m`、`wheel_radius = 0.11349 m` |
 | 升降 | 单自由度丝杠升降台，`lift_joint` 行程 `0 … 0.40 m`（`lift_travel` 参数可改） |
 | 操作 | 两条 6 轴臂，末端 `arm{1,2}_tool0` 法兰帧（外端面 z = 0.0105 m）备用夹爪 |
-| 传感器 | 相机/激光雷达已有完整定义但**默认不启用**（位置未定），见 `urdf/sensors_disabled.xacro` |
+| 传感器 | VLP-16 3D 雷达：16 线、360°、10 Hz，Gazebo 发布点云并由 RViz 默认显示；相机暂未启用 |
 
 ### 2. 仿真与显示
 
 | 项 | 内容 |
 |---|---|
 | 显示 | `launch/display.launch.py`：robot_state_publisher + joint_state_publisher_gui 滑条 + RViz2 |
-| 仿真 | `launch/gazebo.launch.py`：Gazebo **Harmonic**（gz-sim 8）+ `gz_ros2_control` 硬件接口 |
-| 世界 | `worlds/ag_robot.sdf`：斜射太阳 + 低环境光 + 弱补光 + 阴影（**专门为了让结构棱角分明**，见第七节） |
+| 仿真 | `launch/gazebo.launch.py`：Gazebo **Harmonic**（gz-sim 8）+ `gz_ros2_control` + VLP-16 话题桥接 + RViz |
+| 世界 | `worlds/ag_robot.sdf`：斜射太阳、阴影及 3 个雷达演示障碍物（见第七节） |
 | 控制器 | 5 个：`joint_state_broadcaster`、`diff_drive_controller`、`lift_controller`、`arm1_controller`、`arm2_controller`（后三个都是 `JointTrajectoryController`） |
 
 ---
@@ -53,20 +54,26 @@ ag_robot_description/
 ├── urdf/
 │   ├── AG_robot.urdf.xacro        整车模型（要改就改这个）
 │   ├── piper_arm.xacro            单条 PiPER 六轴臂宏（参数核对过官方 URDF）
-│   ├── gazebo.xacro               gz_ros2_control 硬件接口 + 轮子摩擦（use_gazebo:=true 时 include）
-│   └── sensors_disabled.xacro     相机/雷达完整定义，当前未 include
+│   ├── gazebo.xacro               gz_ros2_control + 轮子摩擦 + VLP-16 GPU lidar
+│   └── sensors_disabled.xacro     旧版 2D 雷达/相机定义，当前未 include
 ├── meshes/
 │   ├── *.stl                      车体 8 个（底盘/导轨/立柱/升降台/4 轮，毫米制）
 │   │                              + 臂碰撞 8 个（官方网格，米制）
-│   │                              + 传感器 2 个（car_camera_link / car_laser，当前未引用）
+│   │                              + 旧传感器 2 个（car_camera_link / car_laser，当前未引用）
 │   ├── *.dae                      臂视觉 8 个（官方网格，米制，不加 scale）
 │   └── *.obj + ag_robot.mtl       SolidWorks 导出的**逐部件配色源数据**，当前不参与渲染，且不进版本库（见 .gitignore）
 ├── config/ros2_control.yaml       差速 + 升降 + 双臂 共 5 个控制器
 ├── launch/
 │   ├── display.launch.py          RViz
-│   └── gazebo.launch.py           gz sim
-├── rviz/AG_robot.rviz             RViz 配置（Fixed Frame = base_footprint）
-├── worlds/ag_robot.sdf            仿真世界（注意：世界名是 ag_robot，不是 empty）
+│   └── gazebo.launch.py           gz sim + ROS 桥接 + RViz
+├── rviz/AG_robot.rviz             RViz 配置（机器人 + TF + /velodyne_points，Fixed Frame = base_link）
+├── scripts/                       雷达测量与校验工具（仿真运行时执行，见七.7）
+│   ├── lidar_blind_zone.py        抓一帧点云做盲区分类统计
+│   ├── lidar_target_check.py      近场靶标校验（配 worlds/lidar_blindzone_targets.sdf）
+│   └── lidar_capture_png.py       抓点云出图（俯视 + 3D，需 matplotlib）
+├── worlds/
+│   ├── ag_robot.sdf               仿真世界（注意：世界名是 ag_robot，不是 empty）
+│   └── lidar_blindzone_targets.sdf 近场盲区校验靶板（0.40/0.48/0.52/0.68 m 四块）
 ├── .gitignore
 ├── CMakeLists.txt
 └── package.xml
@@ -142,9 +149,10 @@ ros2 launch ag_robot_description display.launch.py
 ```bash
 ros2 launch ag_robot_description gazebo.launch.py                # 带界面
 ros2 launch ag_robot_description gazebo.launch.py gazebo_gui:=false   # 无界面（服务器端）
+ros2 launch ag_robot_description gazebo.launch.py rviz:=false     # 不打开 RViz
 ```
 
-启动流程：`gz sim` 加载 `worlds/ag_robot.sdf` → `ros_gz_sim create` 在 z=0.003 处生成 `AG_robot` → 桥接 `/clock` → `robot_state_publisher` → 依次加载 5 个控制器。
+启动流程：`gz sim` 加载 `worlds/ag_robot.sdf` → `ros_gz_sim create` 在 z=0.003 处生成 `AG_robot` → 桥接 `/clock`、雷达 LaserScan 和 PointCloud2 → 打开 RViz → `robot_state_publisher` → 依次加载 5 个控制器。
 
 ### 3. 控制器与话题
 
@@ -155,6 +163,8 @@ ros2 launch ag_robot_description gazebo.launch.py gazebo_gui:=false   # 无界�
 | `/lift_controller/follow_joint_trajectory` | `control_msgs/action/FollowJointTrajectory` | 升降台（关节 `lift_joint`，单位 m） |
 | `/arm1_controller/follow_joint_trajectory`、`/arm2_controller/…` | 同上 | 两条臂（各 6 关节，rad） |
 | `/joint_states` | `sensor_msgs/msg/JointState` | 17 个可动关节 |
+| `/velodyne_points` | `sensor_msgs/msg/PointCloud2` | 完整 16 线 3D 点云，RViz 默认显示 |
+| `/velodyne_scan` | `sensor_msgs/msg/LaserScan` | 底层扫描调试；消息不含垂直维度，3D 应用请使用 PointCloud2 |
 
 ```bash
 # 底盘：前进 0.3 m/s（顶一下 Ctrl+C 停）
@@ -229,7 +239,7 @@ base_footprint
 | 两臂间距 | 377.732 mm（沿 x），臂安装面 z = 32 mm |
 | 立柱顶 / 推杆顶 | 离地 1.13 m / 1.34 m |
 
-### 质量与惯量（当前 URDF 内的值，整车合计 **78.55 kg**）
+### 质量与惯量（当前 URDF 内的值，整车合计约 **79.14 kg**）
 
 | link | 质量 (kg) | 惯量 origin (m) | ixx / iyy / izz |
 |---|---|---|---|
@@ -238,6 +248,7 @@ base_footprint
 | `base_frame_link` | 25.293 | (0, −0.114898, 0.455004) | 1.783 / 2.280 / 0.557 |
 | `lift_platform_link` | 3.602 | (0, −0.202447, 0.117) | 0.026 / 0.091 / 0.085 |
 | 臂连杆 ×7 + 法兰 | 4.210 / 条 | 官方值 | 官方完整惯量张量 |
+| `velodyne_link` | 0.590 | (0, 0, 0) | 0.000547 / 0.000547 / 0.000584 |
 
 > **这些是估算值，不是实测**：车体/轮/立柱/升降台按"网格体积 × 密度"算质量（铝 2.7，FBX150 推杆按钢 7.85），惯量按"包围盒均质长方体"近似；只有机械臂用的是官方 URDF 的完整惯量。要接实际控制器，建议用实测质量替换。**`base_frame_link` 的 25.3 kg 尤其可疑**（推杆按钢算偏重，真实 FBX150 大约 8–15 kg）。
 
@@ -289,6 +300,65 @@ SolidWorks 导出的 `.obj` 自带逐部件颜色（`ag_robot.mtl` 里 9 档灰�
 
 > 颜色值写在 `urdf/AG_robot.urdf.xacro` 顶部的 `<material>` 定义里。注意 **sdformat 把 URDF 颜色转 SDF 时会统一 ×1.25**，所以按 URDF 值调色要留这个余量。改完 `colcon build` 重启仿真即可。
 
+### 6. VLP-16 临时模型与扫描参数
+
+雷达临时使用直径 89 mm、高 72 mm 的圆柱体，固定在 `base_frame_link` 顶部正中心。立柱网格实测中心为 `(0, -0.114898)` m、顶面 `z=0.911` m，所以 `velodyne_joint` 的暂定位姿是 `(0, -0.114898, 0.947)` m。正式 CAD 网格完成后，替换 `velodyne_link` 的 visual/collision，再精调这一处 origin 即可。
+
+Gazebo 使用 `gpu_lidar` 模拟当前官方 VLP-16：水平 360°、垂直 40°、16 线、量程 0.5–200 m、距离分辨率 1 cm。官方 ±3 cm 精度近似按 ±3σ 建模，因此 Gaussian 噪声标准差取 1 cm。当前设为 10 Hz、每圈 1800 个水平采样，即约 28.8 万点/秒；改成 20 Hz 时约 57.6 万点/秒，接近官方标称的约 60 万点/秒。世界中额外放置了墙、方箱和圆柱，便于直接观察 3D 扫描轮廓。
+
+### 7. 盲区实测（仿真测定）
+
+工具都在 `scripts/` 下，仿真运行时执行：
+
+| 脚本 | 作用 |
+|---|---|
+| `lidar_blind_zone.py` | 抓一帧点云，按"地面 / 本体 / 环境 / 无回波"分类，输出逐扫描线统计与盲区锥面 |
+| `lidar_target_check.py` | 近场靶标校验，配合 `worlds/lidar_blindzone_targets.sdf` 使用 |
+| `lidar_capture_png.py` | 抓点云出图（俯视 + 3D 双面板），需 matplotlib |
+
+用 `lidar_blind_zone.py` 在三种姿态下实测：升降台 0 mm、升降台 400 mm、升降台 400 mm + 双臂 `joint2=1.2 rad` 抬起（关节角均已核实到位）。
+
+**结论一：本体不构成盲区。** 三种姿态下 **0 条射线打到机器人自身** —— 雷达装在整车最高点，底盘、升降台、机械臂安装面都在 ±20° 视场之下，立柱顶面又落在 0.5 m 最小量程之内。所以雷达"看得过"整车，升降台升到顶、双臂抬起都不挡。
+
+**结论二：真正的盲区是近场地面盲环，半径 3.39 m。** 各扫描线地面最近距离的实测值与理论 `h/sinθ` 逐条吻合：
+
+| 扫描线 | 俯仰 | 地面最近（实测 / 理论） |
+|---|---|---|
+| 0 | −20.00° | **3.39 / 3.44 m** |
+| 1 | −17.33° | 3.90 / 3.95 m |
+| 2 | −14.67° | 4.59 / 4.64 m |
+| 3 | −12.00° | 5.58 / 5.65 m |
+| 4 | −9.33° | 7.15 / 7.25 m |
+| 5 | −6.67° | 9.94 / 10.13 m |
+| 6 | −4.00° | 16.40 / 16.85 m |
+| 7 | −1.33° | 47.94 / 50.52 m |
+
+由此得到可视锥面 **h(d) = 1.1755 − 0.364·d**（d = 水平距离）：
+
+| 水平距离 | 能看到的物体高度 |
+|---|---|
+| 1.0 m | 81 cm 以上 |
+| 2.0 m | 45 cm 以上 |
+| 3.0 m | 8 cm 以上 |
+| ≥ 3.4 m | 地面进入视野 |
+
+换算成"多大的障碍物在多近就看不见"：5 cm → 3.09 m，10 cm → 2.95 m，20 cm → 2.68 m，30 cm → 2.41 m，50 cm → 1.86 m。
+
+**其它盲区**：垂直 ±20° 之外全盲（注意真实 VLP-16 为 ±15°，若按真实值收窄，盲环会扩大到 4.39 m）；0.5 m 最小量程是一个硬性近球。世界演示障碍物（墙/方箱/圆柱）背后的"无地面回波"扇区属正常遮挡，不是雷达缺陷。
+
+**结论三：近场靶标校验（第二种测法）。** 在雷达四周 0.40 / 0.48 / 0.52 / 0.68 m 处各放一块 200×200 mm 靶板（`worlds/lidar_blindzone_targets.sdf`，直接 `gz service` spawn 到世界原点即与 `velodyne_link` 对齐），用 `lidar_target_check.py` 校验：
+
+| 靶板最近面 | 预期 | 实测 | 结果 |
+|---|---|---|---|
+| 0.40 m | 最小量程内，应无回波 | 靶板处无回波，射线透过打到 1.78 m 处 | ✅ |
+| 0.48 m | 最小量程内，应无回波 | 靶板处无回波 | ✅ |
+| 0.52 m | 应测到约 0.52 m | **0.527 m** | ✅ |
+| 0.68 m | 应测到约 0.68 m | **0.684 m** | ✅ |
+
+这条独立验证了 0.5 m 最小量程边界与近场测距精度（在分辨率 1 cm 量级内吻合）。
+
+**两点提示**：① 该盲环是"顶部装 3D 雷达"方案的固有代价，要覆盖 0–3 m 近场需另加近场传感器（车头 2D 雷达 / 超声波 / ToF）；② 实测点云约 3.7 Hz（配置 10 Hz），因为仿真实时率约 0.54×，做感知算法测试时需注意该频率。
+
 ---
 
 ## 八、已知问题与待办
@@ -308,11 +378,10 @@ SolidWorks 导出的 `.obj` 自带逐部件颜色（`ag_robot.mtl` 里 9 档灰�
 
 ### 2. 其它
 
-1. **相机与激光雷达未接**（位置未定）：`urdf/sensors_disabled.xacro` 里有完整定义，解开一行 include 即可。
+1. **VLP-16 仍是临时几何和暂定位姿**：扫描链路已接通；正式 mesh 完成后再替换外形并精调安装位姿。相机仍未接入。
 2. **质量与惯量为估算**（见第六节），接实际控制器前建议用实测值替换。
 3. **升降台没有滑块本体**：CAD 里没有卡在 T 型槽里滑动的滑块零件，所以仿真里升降台是"悬空"滑动的，视觉上不贴合。
 4. **立柱不作联动**：几何完整保留，要接关节只需改 `base_frame_joint` 的 `type`。
-5. **`package.xml` 的 `<license>` 与 maintainer 邮箱还是占位值**（`Proprietary` / `you@example.com`），公开到 GitHub 前请按实际情况填。
 
 ---
 
@@ -327,6 +396,8 @@ SolidWorks 导出的 `.obj` 自带逐部件颜色（`ag_robot.mtl` 里 9 档灰�
 | 底盘导轨那一块渲染成纯黑 | 同一 link 的第二个 visual 用 `<material name="..."/>` 引用时，sdformat 转出的 diffuse 会变成 `0 0 0` | `base_link` 的两处改用内联 `<color>` |
 | 模型发糊、没有棱角 | 8 个车体 `.stl` 法线全为 0，渲染器平滑平均了法线；默认世界太阳垂直向下也没有明暗层次 | 写入逐面法线 + 新增 `worlds/ag_robot.sdf`（斜射太阳/低环境光/补光/阴影） |
 | IMU | — | 新增 `imu_link`（无几何），位于 `base_link` 下方 0.0754 m |
+| VLP-16 3D 雷达 | 正式 CAD 尚未完成 | 立柱顶部新增临时圆柱 link；Gazebo 16 线 GPU lidar、ROS 桥接、RViz 点云及演示障碍物已接通 |
+| 雷达盲区实测 | 需要确认自遮挡与近场覆盖 | 实测三种姿态下本体遮挡 0 条射线；近场地面盲环半径 3.39 m，附可视锥面公式与实测脚本（见七.7） |
 
 ---
 
