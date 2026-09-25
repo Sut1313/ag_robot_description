@@ -115,8 +115,17 @@ def main():
                   f"{(f'{theo:.2f} m' if theo == theo else '—'):>10s}")
 
     if ground.sum():
-        print(f"\n  地面可见范围 {r[ground].min():.2f} ~ {r[ground].max():.2f} m"
-              f"  → 近场地面盲区半径 ≈ {r[ground].min():.2f} m")
+        # 几何上的近场盲环半径 = 最低扫描线的地面环半径中位;
+        # min 只是受距离噪声影响的极值, 会系统性偏小。
+        lo = None
+        if ring is not None:
+            cand = r[(ring == int(ring.min())) & ground]
+            if cand.size:
+                lo = float(np.median(cand))
+        print(f"\n  地面可见范围 {r[ground].min():.2f} ~ {r[ground].max():.2f} m")
+        if lo:
+            print(f"  近场地面盲环半径 ≈ {lo:.3f} m (最低扫描线环半径中位; "
+                  f"min {r[ground].min():.2f} 偏小是噪声极值)")
     if self_hit.sum():
         print(f"  本体回波距离 {r[self_hit].min():.2f}~{r[self_hit].max():.2f} m, "
               f"水平 {horiz[self_hit].min():.2f}~{horiz[self_hit].max():.2f} m, "
