@@ -1,0 +1,352 @@
+<?xml version="1.0"?><!-- =====================================================================
+     AG_robot : 顶配独立悬挂四驱车底盘 + 升降立柱/导轨 + 两条松灵 PiPER 六轴臂
+
+     几何来源
+       底盘与升降结构: D:\AG_robot\robot_model\升降平台.SLDASM 导出的 STEP
+                       (升降平台.step 70.6 MB + 顶配独立悬挂四驱车.step 60.4 MB),
+                       由 OpenCASCADE 提取体积/质心/包围盒并做网格
+       机械臂:         官方 agx_arm_urdf/piper (urdf/piper_arm.xacro), 参数原文照搬
+
+     坐标系(本文件内部) = SolidWorks 装配体坐标:
+         +X = 左右,  +Y = 车头方向,  +Z = 竖直向上
+     注意这与 ROS 约定不同(x 前 y 左 z 上), 所以 base_joint 用 rpy=(0,0,-pi/2) 转进 ROS。
+
+     网格单位不一样, 别搞混:
+       底盘/轮子/立柱/升降台 (chassis, wheel_*, base_frame, platform)  毫米 -> scale="0.001 0.001 0.001"
+       机械臂 (piper_*)                                              米   -> 不要 scale
+
+     结构
+       base_footprint
+       └─ base_link                 整车底盘 (轮子/悬挂/电控/车架/顶板)
+          ├─ wheel_1..4            四轮, continuous, 差速驱动
+          ├─ base_frame_link       立柱+导轨+推杆 (固定)
+          │  └─ lift_platform_link 升降台, 沿立柱 Z 向滑动
+          │     ├─ arm1_*          松灵 PiPER
+          │     └─ arm2_*          松灵 PiPER
+
+     激光雷达与相机: 位置未定, 本次没有加 (urdf/sensors_disabled.xacro 里留了完整定义)。
+     ===================================================================== -->
+<robot name="AG_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:include filename="$(find ag_robot_description)/urdf/piper_arm.xacro"/>
+
+  <xacro:property name="mesh_scale" value="0.001 0.001 0.001"/>
+  <!-- .obj 是 SolidWorks 以"米"导出的(与 .stl 几何完全一致、只差 1000 倍单位), 所以
+       不能套 .stl 那个 0.001 的 scale, 否则视觉体缩到 1/1000、整车只剩 0.55 mm。 -->
+  <xacro:property name="mesh_scale_obj" value="1 1 1"/>
+  <!-- 2026-09-25 颜色说明(实测结论):
+       .obj 视觉体在 Gazebo Harmonic 里**不能上色** —— assimp 加载 .obj 时会带上一份内嵌材质,
+       而网格自带材质优先于 visual/SDF 上的材质, 结果无论 URDF 写什么颜色都渲染成默认白。
+       实测: 放一个纯 box + 显式 SDF 材质能渲染出洋红(RGB 0.56 0.09 0.56),
+       但同样的材质挂到 .obj 网格上无效; .dae(机械臂)自带材质正确所以一直有颜色。
+       所以车体件统一改用**无内嵌材质**的 .stl(与碰撞网格同一个文件, 毫米制, scale 0.001),
+       颜色由下面对每个 visual 写的 <material> 决定。要恢复 .obj 只需把 visual 的
+       filename 改回 .obj、scale 改回 ${mesh_scale_obj}, 但那样在 Gazebo 里会变白模。 -->
+  <xacro:arg name="lift_travel" default="0.40"/>
+  <xacro:arg name="use_gazebo"  default="false"/>
+  <xacro:arg name="arm1_prefix" default="arm1_"/>
+  <xacro:arg name="arm2_prefix" default="arm2_"/>
+  <xacro:property name="arm1_prefix" value="$(arg arm1_prefix)"/>
+  <xacro:property name="arm2_prefix" value="$(arg arm2_prefix)"/>
+
+  <!-- 2026-09-25 调色: 原来 grey(0.55 0.60 0.71)/alu(0.75 0.76 0.78) 都太浅,
+       而且 sdformat 把 URDF 颜色转 SDF 时统一 ×1.25 (0.75 -> 0.94), 整车看起来一片白。
+       现在按部件拉开层次: 底盘深钢灰 / 立柱中灰 / 升降台与导轨亮铝 / 轮胎近黑。 -->
+  <material name="grey"><color rgba="0.28 0.30 0.34 1.0"/></material>
+  <material name="steel"><color rgba="0.52 0.54 0.57 1.0"/></material>
+  <material name="black"><color rgba="0.06 0.06 0.07 1.0"/></material>
+  <material name="blue"><color rgba="0.20 0.40 0.90 1.0"/></material>
+  <material name="red"><color rgba="0.85 0.20 0.20 1.0"/></material>
+  <material name="alu"><color rgba="0.78 0.79 0.81 1.0"/></material>
+  <material name="dark"><color rgba="0.22 0.22 0.24 1.0"/></material>
+  <!-- piper_arm.xacro 的 link2/link5 引用 accent, 本包必须自己定义一份,
+       否则 urdf 解析会报 "material 'accent' undefined" 并退回 RViz 默认色。
+       取值与 piper_lift_ws 那个包保持一致, 同样的两条臂用同一个配色。 -->
+  <material name="accent"><color rgba="0.13 0.42 0.85 1.0"/></material>
+  <!-- ═════════ base_footprint: 地面投影, Nav2 用 ═════════
+       轮子最低点在 base_link 里是 z=-218.49, 所以 base_link 抬高 218.49 mm -->
+  <link name="base_footprint"/>
+
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0.2184858" rpy="0 0 1.5707963"/>
+  </joint>
+
+  <!-- ═════════ base_link: 底盘 ═════════
+       27 个零件合成: 车架(2020 型材x4 + 2040 型材x2)、顶板 460x550x2、
+       4 套 MD60 独立悬挂(不含轮)、Orin Nano、24V6100mAh 电池、驱动板等
+       惯量按合并网格包围盒算的近似值
+
+       + rail.stl: 固定在底盘上的平置 3030 导轨 (2026-09-23 修正)
+         3 根水平型材: Y=260 的 500mm、X=±90 的两根 300mm,
+         以及只与它们相连的 4 个角码 (Y≈228)。
+         这些固定在底盘上、不随升降台运动, 原先误归在 lift_platform_link 里。
+         单独成 rail.stl 而不是并进 chassis.stl, 是为了沿用 alu 材质
+         (并进底盘会跟着变成 grey, 外观就变了)。 -->
+  <link name="base_link">
+    <visual>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/chassis.stl"/></geometry>
+      <!-- 同一 link 里第二个 visual 用 <material name="..."/> 引用时, sdformat 转出来的
+           diffuse 会变成 0 0 0(纯黑), 所以 base_link 这两处改用内联颜色。 -->
+      <material name="grey"><color rgba="0.28 0.30 0.34 1.0"/></material>
+    </visual>
+    <collision>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/chassis.stl"/></geometry>
+    </collision>
+    <!-- 固定在底盘上的整套平置导轨 -->
+    <visual>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/rail.stl"/></geometry>
+      <material name="alu"><color rgba="0.78 0.79 0.81 1.0"/></material>
+    </visual>
+    <collision>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/rail.stl"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.000000 0.000000 -0.052246" rpy="0 0 0"/>
+      <mass value="19.352"/>
+      <inertia ixx="0.539215" ixy="0" ixz="0" iyy="0.533908" iyz="0" izz="0.970366"/>
+    </inertial>
+  </link>
+
+  <!-- ═════════ imu_link: IMU 坐标系 (2026-09-24 新增) ═════════
+       IMU 集成在主控(Orin)上、没有独立安装件, 所以这里只给一个坐标系、不建几何。
+       XY 居中 (X=0, Y=0); Z 按实测取 base_link 下方 0.0754 m, 即 origin = (0, 0, -0.0754) m。
+       base_link 的原点就是顶板下表面 (顶板 460x550x2, CAD Z 0..2), 所以 IMU 落在顶板
+       下方 75.4 mm、车体内部。
+       换算到 ROS 世界系(base_footprint): (0, 0, 0.1431) m —— base_joint 只绕 Z 旋转,
+       高度 0.2185 减去 0.0754。
+       用途: 发布 sensor_msgs/Imu 时用这个 frame; IMU 若装在别处, 改下面的 origin 即可。 -->
+  <link name="imu_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.02"/>
+      <inertia ixx="1e-06" ixy="0" ixz="0" iyy="1e-06" iyz="0" izz="1e-06"/>
+    </inertial>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="imu_link"/>
+    <!-- X=0, Y=0, Z = base_link 下方 0.0754 m -->
+    <origin xyz="0 0 -0.0754" rpy="0 0 0"/>
+  </joint>
+
+  <link name="wheel_1">
+    <visual>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/wheel_1.stl"/></geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/wheel_1.stl"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0.0072004 0" rpy="0 0 0"/>
+      <mass value="5.471"/>
+      <inertia ixx="0.026585" ixy="0" ixz="0" iyy="0.046979" iyz="0" izz="0.026585"/>
+    </inertial>
+  </link>
+
+  <joint name="wheel_1_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="wheel_1"/>
+    <origin xyz="-0.3019 0.2010084 -0.1049916" rpy="0 0.2807556 -1.5707963"/>
+    <axis xyz="0 -1 0"/>
+    <limit effort="50" velocity="20"/>
+    <dynamics damping="0.01" friction="0.1"/>
+  </joint>
+
+  <link name="wheel_2">
+    <visual>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/wheel_2.stl"/></geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/wheel_2.stl"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0.0072004 0" rpy="0 0 0"/>
+      <mass value="5.471"/>
+      <inertia ixx="0.026585" ixy="0" ixz="0" iyy="0.046979" iyz="0" izz="0.026585"/>
+    </inertial>
+  </link>
+
+  <joint name="wheel_2_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="wheel_2"/>
+    <origin xyz="0.3019 0.2010084 -0.1049916" rpy="0 0.2807556 1.5707963"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="50" velocity="20"/>
+    <dynamics damping="0.01" friction="0.1"/>
+  </joint>
+
+  <link name="wheel_3">
+    <visual>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/wheel_3.stl"/></geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/wheel_3.stl"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0.0072004 0" rpy="0 0 0"/>
+      <mass value="5.471"/>
+      <inertia ixx="0.026585" ixy="0" ixz="0" iyy="0.046979" iyz="0" izz="0.026585"/>
+    </inertial>
+  </link>
+
+  <joint name="wheel_3_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="wheel_3"/>
+    <origin xyz="-0.3019 -0.1989916 -0.1049916" rpy="0 0.2807556 -1.5707963"/>
+    <axis xyz="0 -1 0"/>
+    <limit effort="50" velocity="20"/>
+    <dynamics damping="0.01" friction="0.1"/>
+  </joint>
+
+  <link name="wheel_4">
+    <visual>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/wheel_4.stl"/></geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/wheel_4.stl"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0.0072004 0" rpy="0 0 0"/>
+      <mass value="5.471"/>
+      <inertia ixx="0.026585" ixy="0" ixz="0" iyy="0.046979" iyz="0" izz="0.026585"/>
+    </inertial>
+  </link>
+
+  <joint name="wheel_4_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="wheel_4"/>
+    <origin xyz="0.3019 -0.1989916 -0.1049916" rpy="0 0.2807556 1.5707963"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="50" velocity="20"/>
+    <dynamics damping="0.01" friction="0.1"/>
+  </joint>
+
+  <!-- ═════════ base_frame_link: 立柱 + 立柱后侧导轨 + 推杆 (固定) ═════════
+       立柱本体(两块约 150x85x900) + FBX150 行程700mm 电动推杆 + 角码/T型螺母
+       + 立柱后侧(=CAD Y 正侧)的一副导轨: 2 根竖直 3030 型材(300mm, X=±90, Y=-85..-55)
+         + 与二者底部相连的横向导轨(500mm, Y=-85..-55) + T 型螺母(夹在立柱面与横导轨之间)。
+       依据: "CAD -Y = 车头" (见 package.xml "mounted at the front" 与机械臂位于 Y=-187..-89),
+       所以 Y 正侧是车尾方向, 你确认过这副导轨固定在立柱上、不动。
+       2026-09-24: 原先归在本 link、但实际随升降台运动的一批立柱内部件已搬出 ->
+       platform.stl / lift_platform_link: 4 个 U 形滑套(各 1036 面)、2 个小合页件(各 4046 面)、
+       1 个几字折滑座(10162 面, 带 6 个螺孔与 6 个三角形角码对应)。共 22398 面 / 1.680 kg。
+       按本轮要求立柱不做联动 (固定)。 -->
+  <link name="base_frame_link">
+    <visual>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/base_frame.stl"/></geometry>
+      <material name="steel"/>
+    </visual>
+    <collision>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/base_frame.stl"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.000000 -0.114898 0.455004" rpy="0 0 0"/>
+      <mass value="25.293"/>
+      <inertia ixx="1.783345" ixy="0" ixz="0" iyy="2.280038" iyz="0" izz="0.557192"/>
+    </inertial>
+  </link>
+
+  <joint name="base_frame_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="base_frame_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ═════════ lift_platform_link: 升降台 (滑动) ═════════
+       运动件 = 立柱前方(=CAD Y 负侧)那两根竖直 3030 导轨 (200mm, X=±50.5, Y=-207..-177)
+       + 与二者底部相连的横向导轨 (300mm, Y=-207..-177) + 坐在该横导轨上的 4 个角码
+       + 沿竖直导轨同轴堆叠的 6 个卡子 (X=±(64..100.5), Z=60.5..208.5, 卡在立柱侧向凹槽里滑)
+       + 两块 Γ 形机械臂托板 (X=±(150..250), Y=-295..-113) + 嵌在板上的 6 个角码
+       + 立柱内部随动件 (2026-09-24 从 base_frame_link 搬来, 共 22398 面 / 1.680 kg):
+         4 个 U 形滑套 (34.6x28x39.6, 各 1036 面, 打开口 16mm 抱住 X=±46 的 Φ17x839 导杆)
+         + 2 个小合页件 (7x15.6x8, 各 4046 面, 一个嵌在左侧滑套内、一个嵌在左侧卡子摞里)
+         + 1 个几字折滑座 (177x64.6x150, 10162 面, 板件折出两处几字形、带 6 个螺孔,
+           与 6 个三角形角码一一对应, 卡在立柱轨道内滑移),
+       共 28 个零件。升降台靠这些卡子/滑座在立柱两侧的竖向凹槽里上下滑移。
+       机械臂安装位: 按实测, arm1 xyz=(0.187732,-0.249047,0.032)、arm2 xyz=(-0.190000,-0.247667,0.032)
+       (两臂相距 377.732mm, 中点偏 -1.134mm, Z=32 即托板顶面) —— 见下方 arm 的 origin。
+       同轴堆叠的角码必须与本 link 同属一个 link: 6 个卡子与横导轨上的 4 个角码在同一根
+       竖直线、只差高度, 拆开会让升降时两者对穿 (实测相交 22000+ mm³)。
+       轴 (0,0,1) = 本文件坐标系的 Z = 竖直向上 = 立柱竖向凹槽的方向。
+       lower=0 因为 CAD 姿态就是行程下限(平台在最低位)。
+       注意: 新模型里**没有建导轨卡进凹槽的滑块本体**。 -->
+  <joint name="lift_joint" type="prismatic">
+    <parent link="base_frame_link"/>
+    <child link="lift_platform_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="0.0" upper="$(arg lift_travel)" effort="2000" velocity="0.15"/>
+    <dynamics damping="50.0" friction="20.0"/>
+  </joint>
+
+  <link name="lift_platform_link">
+    <visual>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/platform.stl"/></geometry>
+      <material name="alu"/>
+    </visual>
+    <collision>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/platform.stl"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.000000 -0.202447 0.117000" rpy="0 0 0"/>
+      <mass value="3.602"/>
+      <inertia ixx="0.026183" ixy="0" ixz="0" iyy="0.090914" iyz="0" izz="0.085342"/>
+    </inertial>
+  </link>
+
+  <!-- ═════════ 两条松灵 PiPER 六轴臂 ═════════
+       臂本体参数取自官方 agx_arm_urdf/piper (见 urdf/piper_arm.xacro), 网格是米制不用 scale。
+
+       安装位姿由新建模 robot_model.STEP 反求(2026-09-24 二次修正):
+         base_link = Rz180 * STEP + (-108.2168, -96.7167, -843.5)   [毫米, 绕Z转180度再平移]
+         这个读法由四项独立证据确认:
+           建模的 200mm 竖直导轨 -> Y -207.0..-177.0, 与 platform.stl 网格(-211.4..-171.1)
+                                    以及 xacro 里原来的注释(Y=-207..-177)一致
+           推杆 FBX150        -> Y -174.8..-86.8, 落在 base_frame.stl(-199.8..-55) 内
+           臂基座 J12          -> 完全落在 platform.stl 范围内, 底面对齐其 Z=32 面(406~551 个面片接触)
+           轮子                -> 两种读法下是同一组, 不受影响
+         ==> 车头 = base_link 的 -Y 侧(立柱/机械臂那一侧)
+       安装位姿(把上一版的解绕 Z 转 180 度得到, 数值经 Chamfer 验证 2.47 mm):
+         用"整条臂的网格形状配准"定出基座坐标系到装配坐标系的变换, 再做逐点 Chamfer 验证:
+             中位误差 2.47 mm  (网格细分级别, 即精确吻合)
+         对比: 之前 rpy 用 -pi/2 时误差 45.6 mm; 之前的 xyz 误差 34.3 mm。
+       注意: 官方 base_link 的坐标系与 CAD 里 J12 零件的坐标系轴序不同, 所以姿态不能直接
+             照抄零件, 必须像上面这样按几何配准求。
+       换算到 base_link:
+         arm1 xyz = (-0.187589, 0.248698, 0.027595)
+         arm2 xyz = ( 0.190143, 0.247318, 0.027595)
+         rpy      = (0, 0, 1.5707963)    +pi/2, 不是 pi/2 的反号
+       两臂相距 377.732 mm (沿 X); 在 Y 上 arm1 比 arm2 靠前 1.380 mm(建模本身如此, 非对称)。
+       臂的包络(base_link): X -236..-139 / 142..239, Y -66..306, Z 27.6..267.2 mm -->
+  <xacro:piper_arm prefix="${arm1_prefix}" parent="lift_platform_link">
+    <origin xyz="0.187732 -0.249047 0.032000" rpy="0 0 -1.5707963"/>
+  </xacro:piper_arm>
+  <xacro:piper_arm prefix="${arm2_prefix}" parent="lift_platform_link">
+    <origin xyz="-0.190000 -0.247667 0.032000" rpy="0 0 -1.5707963"/>
+  </xacro:piper_arm>
+  <!-- ═════════ 激光雷达 / 相机: 位置未定, 本次不加 ═════════
+       完整定义在 urdf/sensors_disabled.xacro, 网格 car_laser.stl / car_camera_link.stl 也在 meshes/ 下。
+       解开下面这行 include 即可接回来:
+       <xacro:include filename="$(find ag_robot_description)/urdf/sensors_disabled.xacro"/> -->
+
+  <!-- <gazebo reference="base_link"><material>Gazebo/Grey</material></gazebo>   (已由 .obj 自带颜色取代; 若 Gazebo 不认 .obj 材质, 把这几行解开即可) -->
+  <xacro:macro name="wheel_gz" params="i">
+    <gazebo reference="wheel_${i}">
+      <mu1>1.2</mu1><mu2>1.2</mu2><!-- 材质由 wheel_*.obj 自带 -->
+    </gazebo>
+  </xacro:macro>
+  <xacro:wheel_gz i="1"/><xacro:wheel_gz i="2"/>
+  <xacro:wheel_gz i="3"/><xacro:wheel_gz i="4"/>
+
+  <xacro:if value="$(arg use_gazebo)">
+    <xacro:include filename="$(find ag_robot_description)/urdf/gazebo.xacro"/>
+  </xacro:if>
+
+</robot>

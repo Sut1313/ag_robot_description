@@ -1,0 +1,81 @@
+<?xml version="1.0"?>
+<!-- =====================================================================
+     Gazebo Harmonic (gz-sim 8) + gz_ros2_control   (ROS 2 Humble)
+     System side:
+       sudo apt install gz-harmonic ros-humble-ros-gz ros-humble-gz-ros2-control
+     launch/gazebo.launch.py starts `gz sim`, spawns the model with
+     ros_gz_sim create and bridges gz's /clock onto ROS so use_sim_time works.
+     ===================================================================== -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="iface_pos" params="name">
+    <joint name="${name}">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="iface_vel" params="name">
+    <joint name="${name}">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="ctl_arm" params="prefix">
+    <xacro:iface_pos name="${prefix}joint1"/>
+    <xacro:iface_pos name="${prefix}joint2"/>
+    <xacro:iface_pos name="${prefix}joint3"/>
+    <xacro:iface_pos name="${prefix}joint4"/>
+    <xacro:iface_pos name="${prefix}joint5"/>
+    <xacro:iface_pos name="${prefix}joint6"/>
+  </xacro:macro>
+
+  <ros2_control name="AGRobotSystem" type="system">
+    <hardware>
+      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+    </hardware>
+
+    <!-- 2026-09-23: 原来写的是上一版的 wheel_front_left_joint 等名字, 本版实际是
+         wheel_1_joint..wheel_4_joint (见 AG_robot.urdf.xacro), 名字对不上会让
+         ros2_control 给不存在的关节声明接口、Gazebo 直接起不来 -->
+    <xacro:iface_vel name="wheel_1_joint"/>
+    <xacro:iface_vel name="wheel_2_joint"/>
+    <xacro:iface_vel name="wheel_3_joint"/>
+    <xacro:iface_vel name="wheel_4_joint"/>
+
+    <xacro:iface_pos name="lift_joint"/>
+    <xacro:ctl_arm prefix="arm1_"/>
+    <xacro:ctl_arm prefix="arm2_"/>
+  </ros2_control>
+
+  <gazebo>
+    <plugin filename="gz_ros2_control-system"
+            name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <robot_param>robot_description</robot_param>
+      <robot_param_node>robot_state_publisher</robot_param_node>
+      <parameters>$(find ag_robot_description)/config/ros2_control.yaml</parameters>
+    </plugin>
+  </gazebo>
+
+  <!-- 2026-09-25: 这里原来是 <material>Gazebo/Grey</material>。是 Ogre 1.x 的材质脚本名,
+       Gazebo Harmonic 的渲染器已不支持 Ogre 脚本(SdfEntityCreator 会报 "does not support
+       Ogre material scripts"), 材质赋值失败后回退默认材质(白) —— 车壳和四个轮子就是这么
+       变成一片白的。删掉之后, 底盘/立柱/升降台/轮子改用网格自带 .obj/.mtl 的逐部件颜色
+       (来自 SolidWorks 零件色: 底盘 0.22 灰、立柱 0.13 深灰、升降台 0.76 浅色、
+       轮胎 0.07 近黑配 0.70 浅色轮辋)。要在 Gazebo 侧另配色, 用 SDF 原生写法:
+         <material><ambient>0.4 0.4 0.45 1</ambient><diffuse>0.4 0.4 0.45 1</diffuse></material>
+       不要再写 Gazebo/xxx 这种脚本名。摩擦系数 mu1/mu2 与颜色无关, 保留。 -->
+  <xacro:macro name="wheel_gz" params="i">
+    <gazebo reference="wheel_${i}">
+      <mu1>1.2</mu1><mu2>1.2</mu2>
+    </gazebo>
+  </xacro:macro>
+  <xacro:wheel_gz i="1"/><xacro:wheel_gz i="2"/>
+  <xacro:wheel_gz i="3"/><xacro:wheel_gz i="4"/>
+
+</robot>

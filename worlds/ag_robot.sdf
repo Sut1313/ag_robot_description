@@ -1,0 +1,77 @@
+<?xml version="1.0"?>
+<!-- =====================================================================
+     AG_robot 仿真世界 (Gazebo Harmonic / gz-sim 8)
+     为什么不直接用 gz 自带的 empty.sdf:
+       empty.sdf 的太阳是 <pose>0 0 10 0 0 0</pose>, 也就是从正上方垂直往下照。
+       这样所有"竖直面"的 N·L 几乎为 0, 只剩环境光照明, 不同朝向的面亮度几乎相同,
+       整个模型看起来一团糊、没有棱角。这里把太阳斜过来(方位角 + 俯角),
+       并压低环境光, 让每个面的朝向差异体现在亮度上, 结构就清晰了。
+     ===================================================================== -->
+<sdf version="1.9">
+  <world name="ag_robot">
+
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <scene>
+      <!-- 环境光压低: 原来默认的 0.4 会把所有暗面一起提亮, 吃掉明暗对比 -->
+      <ambient>0.22 0.23 0.26 1</ambient>
+      <background>0.30 0.34 0.40 1</background>
+      <shadows>true</shadows>
+      <grid>false</grid>
+    </scene>
+
+    <!-- 太阳: 斜射。roll≈0.65rad(37°) + yaw≈0.78rad(45°), 从右前上方照过来,
+         竖直面按朝向分成明显不同的明暗三档(迎光面/侧面/背光面) -->
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0.65 0.0 0.78</pose>
+      <diffuse>0.95 0.93 0.88 1</diffuse>
+      <specular>0.35 0.35 0.35 1</specular>
+      <direction>-0.4 0.5 -1</direction>
+      <attenuation>
+        <range>1000</range>
+        <linear>0</linear>
+        <constant>1</constant>
+        <quadratic>0</quadratic>
+      </attenuation>
+    </light>
+
+    <!-- 补一盏很弱的反向补光, 避免背光面死黑一片 -->
+    <light type="directional" name="fill">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 10 -0.2 0.0 -2.4</pose>
+      <diffuse>0.18 0.20 0.24 1</diffuse>
+      <specular>0.05 0.05 0.05 1</specular>
+      <direction>-0.3 -0.6 -1</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+          <material>
+            <ambient>0.30 0.30 0.31 1</ambient>
+            <diffuse>0.38 0.38 0.40 1</diffuse>
+            <specular>0.02 0.02 0.02 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

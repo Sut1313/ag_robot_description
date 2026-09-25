@@ -1,0 +1,100 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 100          # Hz
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    diff_drive_controller:
+      type: diff_drive_controller/DiffDriveController
+
+    arm1_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+    arm2_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+    lift_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+# ---------------------------------------------------------------------------
+# differential drive.
+#   base_link axes (see the xacro header): +X = forward, +Z = width
+#   the after the CAD->ROS rotation base_link +Z maps to ROS -Y, so the wheels
+#   at base_link Z = -0.5841 are on the ROS LEFT and those at +0.0841 on the RIGHT.
+#   wheel radius 0.1135 m, half track 0.3019 m  (fourwd_car CAD)
+#   NOTE: in the CAD the four tyres are spun to arbitrary angles about their own
+#   axle and the two sides end up with opposite axle signs, so if the robot
+#   drives backwards just swap left/right below (or negate one side).
+# ---------------------------------------------------------------------------
+diff_drive_controller:
+  ros__parameters:
+    left_wheel_names:  ["wheel_2_joint", "wheel_4_joint"]
+    right_wheel_names: ["wheel_1_joint", "wheel_3_joint"]
+    wheel_separation: 0.6038
+    wheel_radius: 0.11349
+    wheel_separation_multiplier: 1.0
+    left_wheel_radius_multiplier: 1.0
+    right_wheel_radius_multiplier: 1.0
+    publish_rate: 50.0
+    odom_frame_id: odom
+    base_frame_id: base_link
+    pose_covariance_diagonal: [0.001, 0.001, 0.0, 0.0, 0.0, 0.01]
+    twist_covariance_diagonal: [0.001, 0.001, 0.0, 0.0, 0.0, 0.01]
+    open_loop: false
+    enable_odom_tf: true
+    cmd_vel_timeout: 0.5
+    use_stamped_vel: false
+    linear.x.has_velocity_limits: true
+    linear.x.max_velocity: 1.0
+    linear.x.min_velocity: -1.0
+    linear.x.has_acceleration_limits: true
+    linear.x.max_acceleration: 2.0
+    angular.z.has_velocity_limits: true
+    angular.z.max_velocity: 2.0
+    angular.z.min_velocity: -2.0
+    angular.z.has_acceleration_limits: true
+    angular.z.max_acceleration: 4.0
+
+arm1_controller:
+  ros__parameters:
+    joints: [arm1_joint1, arm1_joint2, arm1_joint3, arm1_joint4, arm1_joint5, arm1_joint6]
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    allow_partial_joints_goal: false
+    open_loop_control: false
+    constraints:
+      stopped_velocity_tolerance: 0.05
+      goal_time: 1.0
+      arm1_joint1: {trajectory: 0.10, goal: 0.05}
+      arm1_joint2: {trajectory: 0.10, goal: 0.05}
+      arm1_joint3: {trajectory: 0.10, goal: 0.05}
+      arm1_joint4: {trajectory: 0.10, goal: 0.05}
+      arm1_joint5: {trajectory: 0.10, goal: 0.05}
+      arm1_joint6: {trajectory: 0.10, goal: 0.05}
+
+arm2_controller:
+  ros__parameters:
+    joints: [arm2_joint1, arm2_joint2, arm2_joint3, arm2_joint4, arm2_joint5, arm2_joint6]
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    allow_partial_joints_goal: false
+    open_loop_control: false
+    constraints:
+      stopped_velocity_tolerance: 0.05
+      goal_time: 1.0
+      arm2_joint1: {trajectory: 0.10, goal: 0.05}
+      arm2_joint2: {trajectory: 0.10, goal: 0.05}
+      arm2_joint3: {trajectory: 0.10, goal: 0.05}
+      arm2_joint4: {trajectory: 0.10, goal: 0.05}
+      arm2_joint5: {trajectory: 0.10, goal: 0.05}
+      arm2_joint6: {trajectory: 0.10, goal: 0.05}
+
+lift_controller:
+  ros__parameters:
+    joints: [lift_joint]
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    allow_partial_joints_goal: false
+    constraints:
+      stopped_velocity_tolerance: 0.01
+      goal_time: 1.0
+      lift_joint: {trajectory: 0.05, goal: 0.01}

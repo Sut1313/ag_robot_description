@@ -1,0 +1,91 @@
+<?xml version="1.0"?>
+<!-- =====================================================================
+     相机 / 雷达 —— 当前**没有被 include**, 所以整车模型里没有它们。
+
+     拿到精确建模后, 在 urdf/AG_robot.urdf.xacro 里解开这一行即可:
+
+       <xacro:include filename="$(find ag_robot_description)/urdf/sensors_disabled.xacro"/>
+
+     内容照抄自 fourwd_car_description/urdf/fourwd_car.urdf.xacro,
+     只把 mesh 路径换成本包自带的 car_laser.stl / car_camera_link.stl。
+     参数取的是那份文件里的当前值(不是你 README 里列的商家标定值):
+       laser   x=0.119   y=0       z=0.2719   离地高度
+       camera  x=0.2267  y=0.0002  z=0.2429   离地高度
+     z 都是"离地高度", 关节里减掉 base_link 高度换算成相对值。
+     ===================================================================== -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- 只在被 include 进 AG_robot 时才有意义; 单独 xacro 解析时给个默认值 -->
+  <xacro:property name="laser_x"  value="0.119"/>
+  <xacro:property name="laser_y"  value="0.0"/>
+  <xacro:property name="laser_z"  value="0.2719"/>
+  <xacro:property name="camera_x" value="0.2267"/>
+  <xacro:property name="camera_y" value="0.0002"/>
+  <xacro:property name="camera_z" value="0.2429"/>
+  <xacro:property name="laser_roll"   value="0"/>
+  <xacro:property name="laser_pitch"  value="0"/>
+  <xacro:property name="laser_yaw"    value="0"/>
+  <xacro:property name="camera_roll"  value="0"/>
+  <xacro:property name="camera_pitch" value="0"/>
+  <xacro:property name="camera_yaw"   value="0"/>
+  <xacro:property name="laser_mass"   value="0.25"/>
+  <xacro:property name="camera_mass"  value="0.15"/>
+
+  <!-- ═════════════ 雷神 M10 激光雷达 ═════════════ -->
+  <link name="laser">
+    <visual>
+      <geometry>
+        <mesh filename="package://ag_robot_description/meshes/car_laser.stl"/>
+      </geometry>
+      <material name="blue"/>
+    </visual>
+    <inertial>
+      <origin xyz="0.024 0.0 -0.0086" rpy="0 0 0"/>
+      <mass value="${laser_mass}"/>
+      <inertia ixx="0.000222" ixy="0.0" ixz="-3e-06"
+               iyy="0.000251" iyz="0.0" izz="0.000294"/>
+    </inertial>
+  </link>
+
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser"/>
+    <origin xyz="${laser_x} ${laser_y} ${laser_z - base_link_height}"
+            rpy="${pi/180*laser_roll} ${pi/180*laser_pitch} ${pi/180*laser_yaw}"/>
+  </joint>
+
+  <!-- ═════════════ 奥比深度相机 ═════════════ -->
+  <link name="camera_link">
+    <visual>
+      <geometry>
+        <mesh filename="package://ag_robot_description/meshes/car_camera_link.stl"/>
+      </geometry>
+      <material name="red"/>
+    </visual>
+    <inertial>
+      <origin xyz="0.0019 0.0001 0.0023" rpy="0 0 0"/>
+      <mass value="${camera_mass}"/>
+      <inertia ixx="0.00035" ixy="0.0" ixz="4e-06"
+               iyy="5.1e-05" iyz="-0.0" izz="0.000352"/>
+    </inertial>
+  </link>
+
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="${camera_x} ${camera_y} ${camera_z - base_link_height}"
+            rpy="${pi/180*camera_roll} ${pi/180*camera_pitch} ${pi/180*camera_yaw}"/>
+  </joint>
+
+  <!-- 图像坐标系(OpenCV 约定): z 向前, x 向右, y 向下。相机驱动发图用这个 frame_id -->
+  <link name="camera_optical_link"/>
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_optical_link"/>
+    <origin xyz="0 0 0" rpy="${-pi/2} 0.0 ${-pi/2}"/>
+  </joint>
+
+  <gazebo reference="laser"><material>Gazebo/Blue</material></gazebo>
+  <gazebo reference="camera_link"><material>Gazebo/Red</material></gazebo>
+
+</robot>
