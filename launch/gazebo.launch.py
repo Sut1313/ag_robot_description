@@ -3,7 +3,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, ExecuteProcess, LogInfo,
-                            RegisterEventHandler)
+                            RegisterEventHandler, TimerAction)
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import Command, LaunchConfiguration
@@ -117,7 +117,11 @@ def generate_launch_description():
 
         spawn,
 
-        RegisterEventHandler(OnProcessExit(target_action=spawn, on_exit=[load_jsb])),
+        # 模型 spawn 出来后的头几秒仿真最慢(重网格 + 雷达渲染启动), 这时候立刻切控制器
+        # 会撞上 spawner 内部 5 s 的切换超时, joint_state_broadcaster 会 "Failed to activate",
+        # 结果没有 /joint_states、可动关节的 TF 也全缺。所以先等 10 s 再开始装控制器。
+        RegisterEventHandler(OnProcessExit(
+            target_action=spawn, on_exit=[TimerAction(period=10.0, actions=[load_jsb])])),
         RegisterEventHandler(OnProcessExit(target_action=load_jsb, on_exit=[load_drive])),
         RegisterEventHandler(OnProcessExit(target_action=load_drive, on_exit=[load_lift])),
         RegisterEventHandler(OnProcessExit(target_action=load_lift, on_exit=[load_arm1])),
