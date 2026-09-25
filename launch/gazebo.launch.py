@@ -2,7 +2,8 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, RegisterEventHandler
+from launch.actions import (DeclareLaunchArgument, ExecuteProcess, LogInfo,
+                            RegisterEventHandler)
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import Command, LaunchConfiguration
@@ -29,8 +30,10 @@ def generate_launch_description():
 
     # 树根是 base_footprint(不是 world), 所以 sdformat 不会把模型钉在世界坐标系上,
     # 差速驱动可以直接跑。use_gazebo:=true 只加 gz_ros2_control 的硬件接口和插件。
+    # lidar_pitch 透传给 xacro: xacro 在 launch 时才展开, 所以换雷达倾角不需要重新编译。
     robot_description = ParameterValue(
-        Command(['xacro ', xacro_file, ' use_gazebo:=true']),
+        Command(['xacro ', xacro_file, ' use_gazebo:=true lidar_pitch:=',
+                 LaunchConfiguration('lidar_pitch')]),
         value_type=str)
 
     gazebo_gui = LaunchConfiguration('gazebo_gui')
@@ -90,6 +93,12 @@ def generate_launch_description():
                               description='false = 只跑 gz sim 服务端, 不开界面'),
         DeclareLaunchArgument('rviz', default_value='true',
                               description='true = 打开 RViz 并显示 VLP-16 点云'),
+        DeclareLaunchArgument('lidar_pitch', default_value='0',
+                              description='雷达朝车头下倾角度(度), 正值=下倾; '
+                                          '已验证 0/15/25/35, 任意角度均可, 换角度无需重新编译'),
+
+        LogInfo(msg=['AG_robot: 雷达安装倾角 lidar_pitch = ',
+                     LaunchConfiguration('lidar_pitch'), ' 度 (正值=朝车头下倾)']),
 
         gz_sim,
         gz_sim_headless,

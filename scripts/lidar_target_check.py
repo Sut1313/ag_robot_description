@@ -10,10 +10,8 @@
 用法:
     # 1) 起仿真
     ros2 launch ag_robot_description gazebo.launch.py rviz:=false
-    # 2) 把靶板放到雷达扫描原点 (模型自带位姿, 直接 spawn 即可)
-    gz service -s /world/ag_robot/create --reqtype gz.msgs.EntityFactory \
-      --reptype gz.msgs.Boolean --timeout 5000 \
-      --req 'sdf_filename: "/<包路径>/worlds/lidar_blindzone_targets.sdf"'
+    # 2) 按当前雷达位姿摆靶板 —— 自动从 TF 算出光心的世界位姿, 支持任意 lidar_pitch
+    python3 scripts/spawn_lidar_targets.py
     # 3) 校验
     python3 scripts/lidar_target_check.py
 """

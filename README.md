@@ -41,7 +41,7 @@ base_footprint                          地面投影帧, Nav2 用; 无几何、�
 | 项 | 内容 |
 |---|---|
 | 显示 | `launch/display.launch.py`：robot_state_publisher + joint_state_publisher_gui 滑条 + RViz2 |
-| 仿真 | `launch/gazebo.launch.py`：Gazebo **Harmonic**（gz-sim 8）+ `gz_ros2_control` + VLP-16 话题桥接 + RViz |
+| 仿真 | `launch/gazebo.launch.py`：Gazebo **Harmonic**（gz-sim 8）+ `gz_ros2_control` + VLP-16 话题桥接 + RViz；支持 `lidar_pitch` 参数切换四种雷达姿态（见七.8）|
 | 世界 | `worlds/ag_robot.sdf`：斜射太阳、阴影及 3 个雷达演示障碍物（见第七节） |
 | 控制器 | 5 个：`joint_state_broadcaster`、`diff_drive_controller`、`lift_controller`、`arm1_controller`、`arm2_controller`（后三个都是 `JointTrajectoryController`） |
 
@@ -67,10 +67,13 @@ ag_robot_description/
 │   ├── display.launch.py          RViz
 │   └── gazebo.launch.py           gz sim + ROS 桥接 + RViz
 ├── rviz/AG_robot.rviz             RViz 配置（机器人 + TF + /velodyne_points，Fixed Frame = base_link）
-├── scripts/                       雷达测量与校验工具（仿真运行时执行，见七.7）
-│   ├── lidar_blind_zone.py        抓一帧点云做盲区分类统计
+├── scripts/                       雷达测量与校验工具（仿真运行时执行，见七.7 / 七.8）
+│   ├── lidar_blind_zone.py        抓一帧点云做盲区分类统计（倾角自动从 TF 读）
 │   ├── lidar_target_check.py      近场靶标校验（配 worlds/lidar_blindzone_targets.sdf）
-│   └── lidar_capture_png.py       抓点云出图（俯视 + 3D，需 matplotlib）
+│   ├── lidar_capture_png.py       抓点云出图（俯视 + 3D，需 matplotlib）
+│   ├── spawn_lidar_targets.py     按当前雷达位姿摆靶板（任意倾角都自动对齐）
+│   └── lidar_pose_sweep.sh        四种倾角依次起仿真测盲区，输出对比表
+├── docs/lidar_poses/              四种倾角的点云俯视图（七.8 引用）
 ├── worlds/
 │   ├── ag_robot.sdf               仿真世界（注意：世界名是 ag_robot，不是 empty）
 │   └── lidar_blindzone_targets.sdf 近场盲区校验靶板（0.40/0.48/0.52/0.68 m 四块）
@@ -151,6 +154,17 @@ ros2 launch ag_robot_description gazebo.launch.py                # 带界面
 ros2 launch ag_robot_description gazebo.launch.py gazebo_gui:=false   # 无界面（服务器端）
 ros2 launch ag_robot_description gazebo.launch.py rviz:=false     # 不打开 RViz
 ```
+
+**切换雷达安装倾角**（四种姿态的实测对比见七.8；xacro 在 launch 时才展开，所以**换角度不需要重新编译**）：
+
+```bash
+ros2 launch ag_robot_description gazebo.launch.py lidar_pitch:=0     # 水平（默认）
+ros2 launch ag_robot_description gazebo.launch.py lidar_pitch:=15    # 朝车头下倾 15°
+ros2 launch ag_robot_description gazebo.launch.py lidar_pitch:=25
+ros2 launch ag_robot_description gazebo.launch.py lidar_pitch:=35
+```
+
+`lidar_pitch` 单位是度，**正值 = 朝车头方向（`base_frame_link` 的 −Y）下倾**，填任意角度都可以（例如 `:=18.5`）。启动日志里会打印当前倾角。
 
 启动流程：`gz sim` 加载 `worlds/ag_robot.sdf` → `ros_gz_sim create` 在 z=0.003 处生成 `AG_robot` → 桥接 `/clock`、雷达 LaserScan 和 PointCloud2 → 打开 RViz → `robot_state_publisher` → 依次加载 5 个控制器。
 
@@ -306,6 +320,19 @@ SolidWorks 导出的 `.obj` 自带逐部件颜色（`ag_robot.mtl` 里 9 档灰�
 
 Gazebo 使用 `gpu_lidar` 模拟当前官方 VLP-16：水平 360°、垂直 40°、16 线、量程 0.5–200 m、距离分辨率 1 cm。官方 ±3 cm 精度近似按 ±3σ 建模，因此 Gaussian 噪声标准差取 1 cm。当前设为 10 Hz、每圈 1800 个水平采样，即约 28.8 万点/秒；改成 20 Hz 时约 57.6 万点/秒，接近官方标称的约 60 万点/秒。世界中额外放置了墙、方箱和圆柱，便于直接观察 3D 扫描轮廓。
 
+**安装倾角是参数化的**：`velodyne_joint` 的位姿由 xacro 参数 `lidar_pitch`（度）驱动，`lidar_pitch:=0` 时就是上面这个水平位姿。倾角同时决定安装高度 —— 倾斜后圆柱的最低外缘必须仍落在立柱顶面 `z=0.911 m` 上（否则穿模），所以 joint 的 z 随倾角抬高：
+
+```
+z(pitch) = 0.911 + (h/2)·cos(pitch) + r·sin(pitch) = 0.911 + 0.036·cos(pitch) + 0.0445·sin(pitch)
+```
+
+| `lidar_pitch` | joint z | 光心离地 |
+|---|---|---|
+| 0° | 0.9470 m | 1.1755 m |
+| 15° | 0.9573 m | 1.1854 m |
+| 25° | 0.9624 m | 1.1900 m |
+| 35° | 0.9660 m | 1.1927 m |
+
 ### 7. 盲区实测（仿真测定）
 
 工具都在 `scripts/` 下，仿真运行时执行：
@@ -315,12 +342,14 @@ Gazebo 使用 `gpu_lidar` 模拟当前官方 VLP-16：水平 360°、垂直 40°
 | `lidar_blind_zone.py` | 抓一帧点云，按"地面 / 本体 / 环境 / 无回波"分类，输出逐扫描线统计与盲区锥面 |
 | `lidar_target_check.py` | 近场靶标校验，配合 `worlds/lidar_blindzone_targets.sdf` 使用 |
 | `lidar_capture_png.py` | 抓点云出图（俯视 + 3D 双面板），需 matplotlib |
+| `spawn_lidar_targets.py` | 按当前雷达位姿自动摆靶板（任意倾角），替代手工改 SDF 里的 pose |
+| `lidar_pose_sweep.sh` | 依次跑四种倾角并输出对比表（见七.8）|
 
 用 `lidar_blind_zone.py` 在三种姿态下实测：升降台 0 mm、升降台 400 mm、升降台 400 mm + 双臂 `joint2=1.2 rad` 抬起（关节角均已核实到位）。
 
 **结论一：本体不构成盲区。** 三种姿态下 **0 条射线打到机器人自身** —— 雷达装在整车最高点，底盘、升降台、机械臂安装面都在 ±20° 视场之下，立柱顶面又落在 0.5 m 最小量程之内。所以雷达"看得过"整车，升降台升到顶、双臂抬起都不挡。
 
-**结论二：真正的盲区是近场地面盲环，半径 3.44 m。** 各扫描线的地面环半径实测中位与理论 `h/sinθ` 逐条吻合（偏差 ≤ 8 mm）：
+**结论二：真正的盲区是近场地面盲环，斜距 3.44 m（对应水平距离 3.23 m）。** 各扫描线的地面环半径实测中位与理论 `h/sinθ` 逐条吻合（偏差 ≤ 8 mm）：
 
 | 扫描线 | 俯仰 | 地面环半径（实测中位 / 理论） |
 |---|---|---|
@@ -342,7 +371,7 @@ Gazebo 使用 `gpu_lidar` 模拟当前官方 VLP-16：水平 360°、垂直 40°
 | 1.0 m | 81 cm 以上 |
 | 2.0 m | 45 cm 以上 |
 | 3.0 m | 8 cm 以上 |
-| ≥ 3.4 m | 地面进入视野 |
+| ≥ 3.23 m | 地面进入视野（对应斜距 3.44 m）|
 
 换算成"多大的障碍物在多近就看不见"：5 cm → 3.09 m，10 cm → 2.95 m，20 cm → 2.68 m，30 cm → 2.41 m，50 cm → 1.86 m。
 
@@ -363,6 +392,53 @@ Gazebo 使用 `gpu_lidar` 模拟当前官方 VLP-16：水平 360°、垂直 40°
 
 ---
 
+### 8. 四种雷达姿态对比（供 SLAM / 导航选型）
+
+雷达倾角就是一个参数 `lidar_pitch`（度，正值 = 朝车头即 `base_frame_link` 的 −Y 下倾），启动时传即可，换角度不用重新编译：
+
+```bash
+ros2 launch ag_robot_description gazebo.launch.py rviz:=false lidar_pitch:=0    # 水平
+ros2 launch ag_robot_description gazebo.launch.py rviz:=false lidar_pitch:=15
+ros2 launch ag_robot_description gazebo.launch.py rviz:=false lidar_pitch:=25
+ros2 launch ag_robot_description gazebo.launch.py rviz:=false lidar_pitch:=35
+```
+
+#### 四姿态实测对比
+
+同一场景（**撤掉世界里的演示障碍物**，避免遮挡污染）、同一判据（点云按"地面 / 本体 / 环境 / 无回波"分类）。"地面首见距离"是**世界水平距离**，也就是"车往前多少米才能看见地面"，不是斜距：
+
+| `lidar_pitch` | 光心离地 | 车头地面首见 | 左右地面首见 | 车尾地面首见 | 车尾无地面扇区 | 本体自遮挡 |
+|---|---|---|---|---|---|---|
+| **0°（水平）** | 1.1755 m | 3.224 m | 3.222 m | 3.223 m | 无 | 0 条 |
+| **15°** | 1.1854 m | **1.689 m** | 3.367 m | 13.395 m | 无 | 0 条 |
+| **25°** | 1.1900 m | **1.185 m** | 3.635 m | 无地面回波 | 约 77.38° | 0 条 |
+| **35°** | 1.1927 m | **0.832 m** | 4.076 m | 无地面回波 | 约 117.36° | 0 条 |
+
+四张点云俯视图见 `docs/lidar_poses/lidar_pitch_{0,15,25,35}deg.png`（图中**近场空白就是盲区**）。注意四种姿态下**本体自遮挡都是 0 条射线** —— 雷达装在整车最高点，升降台升到顶、双臂抬起都不挡。
+
+#### 怎么选
+
+- **0° 水平**：四周对称，车头车尾都是 3.22 m，没有方向性缺失。适合**另有近场传感器补 0–3 m、雷达只管中远距全向**的方案。
+- **15°**：车头近地降到 1.69 m，车尾仍能看到 13.4 m 外的地面 —— **车头车尾最均衡，单雷达通用场景推荐先测这一档**。
+- **25°**：车头 1.19 m，但车尾地面**整片消失**（约 77° 扇区无地面）—— 车头优先、能接受车尾地面缺失时选它。
+- **35°**：车头最好（0.83 m），车尾无地面扇区扩大到 **117°**，基本放弃车尾地面覆盖 —— 只在"车头作业为主、倒车靠别的传感器"时用。
+
+**规律**：倾角一旦超过垂直半视场（20°），车尾最低那条扫描线变成**上仰**，车尾地面就整片没有了。扇区宽度 = `180° − 2·asin(tan(20°)/tan(pitch))`：25° → 77.4°、35° → 117.4°，与实测（77.38° / 117.36°）一致。
+
+#### SLAM / 导航侧怎么接
+
+- 点云的 `frame_id` **恒为 `velodyne_link`**，它相对 `base_link` 的位姿由 TF 实时给出（含倾角）。**SLAM 配置里雷达 frame 填 `velodyne_link`、外参走 TF，换姿态时配置文件一个字都不用改。**
+- 起建图前先确认姿态：`ros2 run tf2_ros tf2_echo base_frame_link velodyne_link`，应看到对应 roll（0/15/25/35°）和 z（0.9470 / 0.9573 / 0.9624 / 0.9660 m）。
+- 复现上表：`bash scripts/lidar_pose_sweep.sh`（默认依次跑 0/15/25/35，每轮重启仿真，共约 6 分钟；脚本会先撤掉演示障碍物、并在检测到遮挡污染时自动重测）。
+
+> #### ⚠ 接入 SLAM 之前还需要补的三件事（当前仓库都还没有）
+>
+> 1. Gazebo 里给 `imu_link` 加 `<sensor type="imu">`（现在只有坐标系，没有传感器）；
+> 2. `gazebo.launch.py` 里桥接 `/imu/data`（现在只桥了 `/clock` 和雷达两个话题）；
+> 3. 装 `robot_localization` 跑 EKF，并把 `diff_drive_controller` 的 `enable_odom_tf` 改成 `false` —— 让 EKF 接管 `odom → base_link`，否则 TF 里 `base_link` 会同时有 `base_footprint` 和 `odom` 两个父节点（见八.1）。
+
+---
+
 ## 八、已知问题与待办
 
 ### 1. ⚠ `base_link` 的轴约定（最需要决定的一条）
@@ -380,7 +456,7 @@ Gazebo 使用 `gpu_lidar` 模拟当前官方 VLP-16：水平 360°、垂直 40°
 
 ### 2. 其它
 
-1. **VLP-16 仍是临时几何和暂定位姿**：扫描链路已接通；正式 mesh 完成后再替换外形并精调安装位姿。相机仍未接入。
+1. **VLP-16 仍是临时几何**：扫描链路已接通，安装倾角可用 `lidar_pitch` 参数在 0–35° 间调整（见七.8）；正式 mesh 完成后替换外形并精调安装位姿。相机仍未接入。**SLAM 前置条件（IMU 传感器 / `/imu/data` 桥接 / EKF）见七.8 末尾。**
 2. **质量与惯量为估算**（见第六节），接实际控制器前建议用实测值替换。
 3. **升降台没有滑块本体**：CAD 里没有卡在 T 型槽里滑动的滑块零件，所以仿真里升降台是"悬空"滑动的，视觉上不贴合。
 4. **立柱不作联动**：几何完整保留，要接关节只需改 `base_frame_joint` 的 `type`。
@@ -399,6 +475,7 @@ Gazebo 使用 `gpu_lidar` 模拟当前官方 VLP-16：水平 360°、垂直 40°
 | 模型发糊、没有棱角 | 8 个车体 `.stl` 法线全为 0，渲染器平滑平均了法线；默认世界太阳垂直向下也没有明暗层次 | 写入逐面法线 + 新增 `worlds/ag_robot.sdf`（斜射太阳/低环境光/补光/阴影） |
 | IMU | — | 新增 `imu_link`（无几何），位于 `base_link` 下方 0.0754 m |
 | VLP-16 3D 雷达 | 正式 CAD 尚未完成 | 立柱顶部新增临时圆柱 link；Gazebo 16 线 GPU lidar、ROS 桥接、RViz 点云及演示障碍物已接通 |
+| 雷达倾角参数化 | 要对比四种雷达姿态做 SLAM 选型，逐姿态改文件太笨 | 新增 `lidar_pitch` 参数（0/15/25/35 与历史标签逐值一致）、两个 launch 透传、脚本改从 TF 读姿态；新增四姿态对比表与 `lidar_pose_sweep.sh`（见七.8）|
 | 雷达盲区实测 | 需要确认自遮挡与近场覆盖 | 实测三种姿态下本体遮挡 0 条射线；近场地面盲环半径 3.44 m、安装姿态实测倾斜 ≤0.01°，附可视锥面公式与实测脚本（见七.7） |
 
 ---

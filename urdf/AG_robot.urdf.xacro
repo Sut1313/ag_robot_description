@@ -48,6 +48,20 @@
   <xacro:arg name="use_gazebo"  default="false"/>
   <xacro:arg name="arm1_prefix" default="arm1_"/>
   <xacro:arg name="arm2_prefix" default="arm2_"/>
+  <!-- ═════════ 雷达安装倾角（参数化, 供 SLAM 对比四种姿态）═════════
+       lidar_pitch 单位: 度; 正值 = 朝车头方向(base_frame_link 的 -Y)下倾。
+       已验证 0(水平) / 15 / 25 / 35, 实际填任意角度都行。
+       切换方式: ros2 launch ag_robot_description gazebo.launch.py lidar_pitch:=25
+       —— xacro 在 launch 时才展开, 所以换角度不需要重新 colcon build。
+       joint 的 z 必须随倾角抬高, 否则倾斜圆柱的最低外缘会插进立柱顶面(z=0.911 m):
+           z(pitch) = 0.911 + (h/2)·cos(pitch) + r·sin(pitch),  h=0.072, r=0.0445
+       取值: 0°→0.947(水平版原值)  15°→0.9573  25°→0.9624  35°→0.9660
+             (35° 与历史提交 vlp16-tilt35 的 0.966013 一致) -->
+  <xacro:arg name="lidar_pitch" default="0"/>
+  <xacro:property name="lidar_pitch_deg" value="$(arg lidar_pitch)"/>
+  <xacro:property name="lidar_pitch_rad" value="${radians(float(lidar_pitch_deg))}"/>
+  <xacro:property name="velodyne_z"
+                  value="${0.911 + 0.036*cos(lidar_pitch_rad) + 0.0445*sin(lidar_pitch_rad)}"/>
   <xacro:property name="arm1_prefix" value="$(arg arm1_prefix)"/>
   <xacro:property name="arm2_prefix" value="$(arg arm2_prefix)"/>
 
@@ -330,7 +344,8 @@
   <joint name="velodyne_joint" type="fixed">
     <parent link="base_frame_link"/>
     <child link="velodyne_link"/>
-    <origin xyz="0 -0.114898 0.947" rpy="0 0 0"/>
+    <!-- 位姿由 lidar_pitch 参数驱动, 见文件开头那段注释 -->
+    <origin xyz="0 -0.114898 ${velodyne_z}" rpy="${lidar_pitch_rad} 0 0"/>
   </joint>
 
   <!-- ═════════ 两条松灵 PiPER 六轴臂 ═════════
