@@ -8,15 +8,10 @@
 #     bash scripts/lidar_pose_sweep.sh              # 默认 0 15 25 35
 #     bash scripts/lidar_pose_sweep.sh 10 20        # 或指定任意角度
 #
-# 模型用环境变量选（默认原网格版）:
-#     AG_MODEL=simple bash scripts/lidar_pose_sweep.sh     # 图元简化版
-#     两个模型跑出来的表应当逐项吻合 —— 这是"简化没改到传感器/整体几何"的直接验证。
-#
 # 注意: 它会**杀掉当前正在跑的仿真**（一次只能用一套 gz 服务）, 每轮约 1 分钟。
 set -u
 
 PITCHES="${*:-0 15 25 35}"
-MODEL="${AG_MODEL:-full}"
 LOGDIR=/tmp/lidar_sweep
 mkdir -p "$LOGDIR"
 
@@ -32,16 +27,15 @@ stop_sim() {
   sleep 2
 }
 
-echo "模型: $MODEL   (AG_MODEL=simple 可切到图元简化版)"
 printf '%-8s %-10s %-12s %-14s %-14s %-16s %s\n' \
   "倾角" "光心离地" "车头近地" "左右近地" "车尾近地" "车尾无地面扇区" "本体遮挡"
 printf '%s\n' "--------------------------------------------------------------------------------------------------"
 
 for p in $PITCHES; do
   stop_sim
-  LOG="$LOGDIR/${MODEL}_pitch_$p.log"
-  nohup ros2 launch ag_robot_description gazebo.launch.py rviz:=false \
-        model:="$MODEL" lidar_pitch:="$p" > "$LOG" 2>&1 &
+  LOG="$LOGDIR/pitch_$p.log"
+  nohup ros2 launch ag_robot_description gazebo.launch.py rviz:=false lidar_pitch:="$p" \
+        > "$LOG" 2>&1 &
   # 等点云话题出数据
   ok=0
   for _ in $(seq 1 40); do
@@ -75,12 +69,12 @@ for p in $PITCHES; do
     remove_obstacles
     OUT=$(timeout 150 python3 "$(dirname "$0")/lidar_blind_zone.py" 2>&1)
   fi
-  echo "$OUT" > "$LOGDIR/${MODEL}_blindzone_$p.txt"
+  echo "$OUT" > "$LOGDIR/blindzone_$p.txt"
 
   # 顺带出一张点云图 (需要 matplotlib; 失败不影响主流程)
   if timeout 150 python3 "$(dirname "$0")/lidar_capture_png.py" \
-       -o "$LOGDIR/${MODEL}_scan_${p}deg.png" --range 6 >/dev/null 2>&1; then
-    echo "  (已出图 $LOGDIR/${MODEL}_scan_${p}deg.png)"
+       -o "$LOGDIR/scan_${p}deg.png" --range 6 >/dev/null 2>&1; then
+    echo "  (已出图 $LOGDIR/scan_${p}deg.png)"
   fi
 
   get() { echo "$OUT" | grep -E "$1" | head -1 | sed -E 's/.*: *//'; }
@@ -96,4 +90,4 @@ for p in $PITCHES; do
 done
 
 echo
-echo "明细: $LOGDIR/${MODEL}_blindzone_<倾角>.txt   仿真日志: $LOGDIR/${MODEL}_pitch_<倾角>.log"
+echo "明细: $LOGDIR/blindzone_<倾角>.txt   仿真日志: $LOGDIR/pitch_<倾角>.log"
