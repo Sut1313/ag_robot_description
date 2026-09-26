@@ -36,12 +36,24 @@ base_footprint                          地面投影帧, Nav2 用; 无几何、�
 | 操作 | 两条 6 轴臂，末端 `arm{1,2}_tool0` 法兰帧（外端面 z = 0.0105 m）备用夹爪 |
 | 传感器 | VLP-16 3D 雷达：16 线、360°、10 Hz，Gazebo 发布点云并由 RViz 默认显示；相机暂未启用 |
 
+**两个几何版本，同一套关节/传感器/控制器**（2026-09-26 新增简化版）：
+
+| 版本 | 入口 | 几何 | 适用 |
+|---|---|---|---|
+| 原网格版 | `AG_robot.urdf.xacro`（`model:=full`，默认）| SolidWorks 导出的 mesh，约 252 万面 | 看外观、出图、核对尺寸 |
+| **图元简化版** | `AG_robot_simple.urdf.xacro`（`model:=simple`）| 37 个 box/cylinder，0 面 | **跑仿真/SLAM/导航**，实测实时率 0.31 → 0.96 |
+
+两版的 link/joint 名字、关节 origin/axis/limit/dynamics、质量与惯量、VLP-16 参数、
+`ros2_control` 配置**完全相同**（由 `scripts/compare_models.py` 逐项校验），
+只有视觉/碰撞几何不同；整车外形尺寸、轮距轴距、雷达安装位姿与四种姿态下的盲区实测值都一致（见七.9）。
+
 ### 2. 仿真与显示
 
 | 项 | 内容 |
 |---|---|
 | 显示 | `launch/display.launch.py`：robot_state_publisher + joint_state_publisher_gui 滑条 + RViz2 |
-| 仿真 | `launch/gazebo.launch.py`：Gazebo **Harmonic**（gz-sim 8）+ `gz_ros2_control` + VLP-16 话题桥接 + RViz；支持 `lidar_pitch` 参数切换四种雷达姿态（见七.8）|
+| 仿真 | `launch/gazebo.launch.py`：Gazebo **Harmonic**（gz-sim 8）+ `gz_ros2_control` + VLP-16 话题桥接 + RViz；支持 `lidar_pitch` 参数切换四种雷达姿态（见七.8）、`model:=full/simple` 切换几何版本 |
+| 简化版入口 | `launch/gazebo_simple.launch.py`：与上面同一个 launch（只是带上 `model:=simple`），参数（`rviz` / `gazebo_gui` / `lidar_pitch`）通用 |
 | 世界 | `worlds/ag_robot.sdf`：斜射太阳、阴影及 3 个雷达演示障碍物（见第七节） |
 | 控制器 | 5 个：`joint_state_broadcaster`、`diff_drive_controller`、`lift_controller`、`arm1_controller`、`arm2_controller`（后三个都是 `JointTrajectoryController`） |
 
@@ -52,9 +64,11 @@ base_footprint                          地面投影帧, Nav2 用; 无几何、�
 ```
 ag_robot_description/
 ├── urdf/
-│   ├── AG_robot.urdf.xacro        整车模型（要改就改这个）
+│   ├── AG_robot.urdf.xacro        整车模型（原网格版；要改外观就改这个）
+│   ├── AG_robot_simple.urdf.xacro **简化版整车模型**（37 个 box/cylinder，不含网格；见七.9）
 │   ├── piper_arm.xacro            单条 PiPER 六轴臂宏（参数核对过官方 URDF）
-│   ├── gazebo.xacro               gz_ros2_control + 轮子摩擦 + VLP-16 GPU lidar
+│   ├── piper_arm_simple.xacro     同上，几何换成图元的版本（关节/惯量逐字照搬）
+│   ├── gazebo.xacro               gz_ros2_control + 轮子摩擦 + VLP-16 GPU lidar（两版共用）
 │   └── sensors_disabled.xacro     旧版 2D 雷达/相机定义，当前未 include
 ├── meshes/
 │   ├── *.stl                      车体 8 个（底盘/导轨/立柱/升降台/4 轮，毫米制）
@@ -62,17 +76,21 @@ ag_robot_description/
 │   │                              + 旧传感器 2 个（car_camera_link / car_laser，当前未引用）
 │   ├── *.dae                      臂视觉 8 个（官方网格，米制，不加 scale）
 │   └── *.obj + ag_robot.mtl       SolidWorks 导出的**逐部件配色源数据**，当前不参与渲染，且不进版本库（见 .gitignore）
-├── config/ros2_control.yaml       差速 + 升降 + 双臂 共 5 个控制器
+│                                  （简化版一个网格都不用，删掉 meshes/ 也能跑）
+├── config/ros2_control.yaml       差速 + 升降 + 双臂 共 5 个控制器（两版共用）
 ├── launch/
 │   ├── display.launch.py          RViz
-│   └── gazebo.launch.py           gz sim + ROS 桥接 + RViz
+│   ├── gazebo.launch.py           gz sim + ROS 桥接 + RViz（`model:=full|simple` 选几何版本）
+│   └── gazebo_simple.launch.py    简化版入口（同一个 launch，只是带上 model:=simple）
 ├── rviz/AG_robot.rviz             RViz 配置（机器人 + TF + /velodyne_points，Fixed Frame = base_link）
-├── scripts/                       雷达测量与校验工具（仿真运行时执行，见七.7 / 七.8）
+├── scripts/                       雷达测量与校验工具（仿真运行时执行，见七.7 / 七.8 / 七.9）
 │   ├── lidar_blind_zone.py        抓一帧点云做盲区分类统计（倾角自动从 TF 读）
 │   ├── lidar_target_check.py      近场靶标校验（配 worlds/lidar_blindzone_targets.sdf）
 │   ├── lidar_capture_png.py       抓点云出图（俯视 + 3D，需 matplotlib）
 │   ├── spawn_lidar_targets.py     按当前雷达位姿摆靶板（任意倾角都自动对齐）
-│   └── lidar_pose_sweep.sh        四种倾角依次起仿真测盲区，输出对比表
+│   ├── lidar_pose_sweep.sh        四种倾角依次起仿真测盲区，输出对比表（`AG_MODEL=simple` 换模型）
+│   ├── compare_models.py          逐项核对简化版与原版：关节/惯量/传感器是否一致 + 几何尺寸偏差
+│   └── bench_model.py             性能与运动跟踪实测（实时率、点云频率、直行/转向/升降/臂）
 ├── docs/lidar_poses/              四种倾角的点云俯视图（七.8 引用）
 ├── worlds/
 │   ├── ag_robot.sdf               仿真世界（注意：世界名是 ag_robot，不是 empty）
@@ -154,6 +172,18 @@ ros2 launch ag_robot_description gazebo.launch.py                # 带界面
 ros2 launch ag_robot_description gazebo.launch.py gazebo_gui:=false   # 无界面（服务器端）
 ros2 launch ag_robot_description gazebo.launch.py rviz:=false     # 不打开 RViz
 ```
+
+**切换几何版本**（原网格版好看但重、简化版图元 0 面但快 3 倍，详见七.9；两者关节/惯量/传感器完全一致）：
+
+```bash
+ros2 launch ag_robot_description gazebo_simple.launch.py          # 简化版（跑仿真用这个）
+ros2 launch ag_robot_description gazebo.launch.py model:=simple   # 等价写法
+ros2 launch ag_robot_description gazebo.launch.py                 # 原网格版（默认，看外观用）
+```
+
+简化版的 `gazebo_simple.launch.py` 支持同样的 `rviz` / `gazebo_gui` / `lidar_pitch` 参数，
+例如 `ros2 launch ag_robot_description gazebo_simple.launch.py lidar_pitch:=25 rviz:=false`。
+其余工具（`scripts/lidar_blind_zone.py`、`scripts/bench_model.py`、TF 帧名、控制器与话题名）**两版通用，一个字都不用改**。
 
 **切换雷达安装倾角**（四种姿态的实测对比见七.8；xacro 在 launch 时才展开，所以**换角度不需要重新编译**）：
 
@@ -437,6 +467,71 @@ ros2 launch ag_robot_description gazebo.launch.py rviz:=false lidar_pitch:=35
 > 2. `gazebo.launch.py` 里桥接 `/imu/data`（现在只桥了 `/clock` 和雷达两个话题）；
 > 3. 装 `robot_localization` 跑 EKF，并把 `diff_drive_controller` 的 `enable_odom_tf` 改成 `false` —— 让 EKF 接管 `odom → base_link`，否则 TF 里 `base_link` 会同时有 `base_footprint` 和 `odom` 两个父节点（见八.1）。
 
+**复现七.8 那三行（不改几何只换模型）**：`bash scripts/lidar_pose_sweep.sh` 默认跑原网格版；加 `AG_MODEL=simple bash scripts/lidar_pose_sweep.sh` 跑简化版，两版结果应逐项吻合（见七.9）。
+
+---
+
+### 9. 简化模型 `AG_robot_simple`（2026-09-26 新增，跑得动的那一版）
+
+原网格版整车约 **252 万面**（渲染 126.9 万 + 碰撞 125.2 万），实测实时率只有 0.31、配 10 Hz 的雷达实际只出 3.2 Hz。简化版把**所有网格换成 37 个 box / cylinder**（0 面），几何尺寸取自原网格逐件实测的包围盒，而关节 / 惯量 / 传感器一件没动。
+
+```bash
+ros2 launch ag_robot_description gazebo_simple.launch.py              # 简化版(带界面+RViz)
+ros2 launch ag_robot_description gazebo_simple.launch.py lidar_pitch:=25 rviz:=false
+ros2 launch ag_robot_description gazebo.launch.py model:=simple ...   # 等价写法
+```
+
+#### 几何怎么压的（每块图元的来源）
+
+| link | 原网格（连通件实测） | 简化后 |
+|---|---|---|
+| `base_link` | 底盘 547×550×162 + 平置导轨 500×330×36.5（380,434 面）| 7 块：车架 500×550×22、4 套悬挂/轮毂 261.5×148×120、电池电控 177×164×42.4、导轨 500×330×36.5（铝色）|
+| `wheel_1..4` | 各 92,096 面（实心胎回转体）| 圆柱 Ø226.99×68（胎体），轴沿轮轴；半径 113.4942 mm 与 `wheel_radius` 一致 |
+| `base_frame_link` | 立柱+推杆+后侧导轨 117,138 面 | 4 块：立柱 150×85.6×909（**顶面 z=0.911 不变**，雷达就坐这个面）、后侧横导轨 500×30×30、两根 3030 300 mm |
+| `lift_platform_link` | 升降台 28 个连通件 44,494 面 | 5 块：两块臂托板 100×180×30（**顶面 z=32 就是机械臂安装面**）、前侧横导轨 300×30×30、两根 3030 200 mm |
+| 臂 ×2 | 每臂 8 个构件：视觉 .dae 14.9 MB / 约 17.9 万面，碰撞 .stl 8.5 MB / 约 17.1 万面 | 每臂 8 个图元：长杆用圆柱（大臂 Ø97×348、小臂 Ø86×245、腕 Ø61×113），紧凑件用长方体，末端法兰/盘用薄圆柱 |
+| `velodyne_link` | 本来就是圆柱 | 一字未改（几何、惯量、关节、传感器全同）|
+
+#### 与原版的一致性（`python3 scripts/compare_models.py` 可随时复算）
+
+- **A 关节** 27 个关节的 type/parent/child/origin/axis/limit/dynamics：**逐项一致**
+- **B 惯量** 28 个 link 的质量/质心/惯性张量：**逐项一致**，整车 **79.141 kg** 不变
+- **C 传感器与控制器** `<gazebo>` / `<gazebo reference>` / `<ros2_control>` 段：**完全一致** —— 简化版 include 的就是同一份 `urdf/gazebo.xacro`，VLP-16 的 16 线 / 360° / ±20° / 0.5–200 m / 10 Hz / 1800×16 / σ=1 cm 不可能是改错的
+- **整车外形** 关节角全 0 时把各 link 几何按关节树累到 `base_footprint`：两版包围盒**逐轴 0.0 mm** 偏差，且顶到最外沿的是同一批 link（`wheel_1..4` 与 `velodyne_link`）
+
+单件最大偏差 14.4 mm（车轮轴向：原网格另有一段伸进悬挂里的轮轴，已略去；**轮子外侧面位置不变**，所以轮距 603.8 / 车宽不变）。其余 1.5–5.3 mm，都是"丢掉看不见的内部件"造成的。
+
+#### 性能实测（同一台机器、同一次会话、同一套世界、同样命令）
+
+| 指标 | 原网格版 | 简化版 |
+|---|---|---|
+| 实时率（无界面；`/clock` 标称 1000 Hz）| 0.32 | **0.95** |
+| 实时率（带 Gazebo 界面）| 0.31 | **0.96** |
+| `/velodyne_points` 频率（配置 10 Hz）| 3.2 Hz | **9.7 Hz** |
+| 每帧点数 | 1800×16 | 1800×16（同）|
+| 加载的几何 | 252 万面 | 0 面（37 个图元）|
+
+#### 功能实测（`python3 scripts/bench_model.py`，两版逐项对拍）
+
+| 项目 | 原网格版 | 简化版 | 说明 |
+|---|---|---|---|
+| 直行 `linear.x=0.3` | 2.6434 rad/s | **2.6434 rad/s** | 理论 0.3/0.11349=2.6434，误差 0.00% |
+| 转向 `angular.z=0.5` | 0.4976 rad/s | **0.5000 rad/s** | 仿真时钟下的稳态角速度；四轮同为 ±1.3301 |
+| 升降 0.15 / 0.30 / 0.00 m | 0.14997 / 0.29998 / 0.00004 | **0.15000 / 0.30000 / 0.00000** | 2 s 轨迹，两版都在容差内 |
+| arm1 六轴到位 | 最大误差 0.0002 rad | **0.0000 rad** | `arm1_joint1 → 0.5` |
+| 四种雷达姿态盲区 | 见七.8 表 | **逐项吻合** | 0/15/25/35° 的"车尾无地面扇区" 77.38° / 117.36° 与原表完全相同；车头近地距离差 ≤4 mm；本体自遮挡 0 条 |
+
+> 雷达盲区是最能说明问题的指标：它同时取决于雷达安装位姿、立柱顶面高度和车体轮廓。两版能对到毫米级，说明"传感器位置与参数、整体尺寸"都没走样。
+
+#### 两版有这么几处**刻意的**不同（都已量化）
+
+1. 简化版删掉了原模型里"升降台内部滑套/滑座"等看不见的件 —— 这些件在原模型里是**互相嵌入**的（U 形滑套抱着 Φ17 导杆、滑座插进立柱凹槽），既费面数又给升降凭空加了阻力。简化版没有这些内部件，升降反而更利落（0.15000 比原版 0.14997 更贴目标）。
+2. 车轮只保留胎体（原网格胎宽 68 mm，另有一段 15 mm 长的轮轴凸出伸进悬挂盒里），于是该 link 的轴向尺寸 82.4 → 68 mm；**轮胎外侧面与胎径未变**。
+3. 立柱丢掉顶板外沿 2.4 mm 与底部一个 8 mm 小合页件，升降台丢掉伸进立柱内部的 3.5 mm，底盘丢掉最下面 1.5 mm 的底板。
+4. 臂的长杆用圆柱近似方管，圆柱会盖住方管对角，所以 `link3` 的 Z 向多 5.3 mm、`link5` 的 X 向多 1.0 mm —— 属于"包络略微变大"的安全方向。
+
+> 想让哪个部件更精细，直接改 `urdf/AG_robot_simple.urdf.xacro` 里那一行图元参数（每行上方都注了原网格实测值），改完 `colcon build` 重启；改完跑一次 `scripts/compare_models.py` 确认 A/B/C 三项仍然全一致。
+
 ---
 
 ## 八、已知问题与待办
@@ -477,6 +572,18 @@ ros2 launch ag_robot_description gazebo.launch.py rviz:=false lidar_pitch:=35
 | VLP-16 3D 雷达 | 正式 CAD 尚未完成 | 立柱顶部新增临时圆柱 link；Gazebo 16 线 GPU lidar、ROS 桥接、RViz 点云及演示障碍物已接通 |
 | 雷达倾角参数化 | 要对比四种雷达姿态做 SLAM 选型，逐姿态改文件太笨 | 新增 `lidar_pitch` 参数（0/15/25/35 与历史标签逐值一致）、两个 launch 透传、脚本改从 TF 读姿态；新增四姿态对比表与 `lidar_pose_sweep.sh`（见七.8）|
 | 雷达盲区实测 | 需要确认自遮挡与近场覆盖 | 实测三种姿态下本体遮挡 0 条射线；近场地面盲环半径 3.44 m、安装姿态实测倾斜 ≤0.01°，附可视锥面公式与实测脚本（见七.7） |
+
+### 2026-09-26：新增图元简化版（`AG_robot_simple`）
+
+| 做的事 | 原因 | 结果 |
+|---|---|---|
+| 新增 `urdf/AG_robot_simple.urdf.xacro` + `urdf/piper_arm_simple.xacro` | 原模型 252 万面，实时率只有 0.31，仿真卡到没法用 | 整车几何换成 37 个 box/cylinder（0 面）；实时率 0.31 → 0.96，点云 3.2 → 9.7 Hz |
+| 关节/惯量/传感器/控制器**一字未改** | 用户的硬要求：关节运动参数与传感器位置参数不能变 | 直接 include 同一份 `gazebo.xacro`；`scripts/compare_models.py` 逐项校验 A/B/C 全一致、整车质量 79.141 kg 不变、整车包围盒逐轴 0.0 mm 偏差 |
+| 每个图元的尺寸取自原网格实测包围盒 | 要"整体尺寸与原来相当" | 每块图元上方都注了原网格连通件的实测尺寸；单件最大偏差 14.4 mm（车轮轴向，外侧面未变），其余 1.5–5.3 mm |
+| 新增 `scripts/compare_models.py` | 简化容易悄悄改坏东西，需要可复算的证据 | 一键对拍两个模型：关节/惯量/传感器段落一致性 + 每 link 几何包围盒偏差 + 整车包围盒 + 面数统计 |
+| 新增 `scripts/bench_model.py` | "快了多少、动得对不对" 要能量化 | 实测实时率、点云频率、直行/转向/升降/机械臂跟踪；两版逐项对拍（见七.9） |
+| `gazebo.launch.py` 加 `model:=` 参数，新增 `gazebo_simple.launch.py` | 不改动已验证的原入口 | 默认 `model:=full` 行为不变；简化版是同一个 launch 的薄壳，以后改 launch 两个模型同步生效 |
+| `lidar_pose_sweep.sh` 支持 `AG_MODEL=simple` | 需要验证简化后雷达盲区是否走样 | 四种倾角逐项吻合（0/15/25/35° 本体自遮挡均 0 条，77.38°/117.36° 扇区与原表完全相同，近地距离差 ≤4 mm） |
 
 ---
 

@@ -6,7 +6,7 @@ from launch.actions import (DeclareLaunchArgument, ExecuteProcess, LogInfo,
                             RegisterEventHandler, TimerAction)
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
-from launch.substitutions import Command, LaunchConfiguration
+from launch.substitutions import Command, LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -16,7 +16,13 @@ SPAWN_Z = '0.003'
 
 def generate_launch_description():
     pkg = get_package_share_directory('ag_robot_description')
-    xacro_file = os.path.join(pkg, 'urdf', 'AG_robot.urdf.xacro')
+    # model:=full (默认) = 原网格版; model:=simple = 图元简化版(见 urdf/AG_robot_simple.urdf.xacro)。
+    # 两个模型的 link/joint/传感器/控制器完全同名同参数, 只有几何不同, 所以下面的
+    # spawn/桥接/控制器链一个字都不用改。简化版不引用任何网格, 启动更快。
+    xacro_file = PythonExpression([
+        repr(os.path.join(pkg, 'urdf', 'AG_robot_simple.urdf.xacro')),
+        " if '", LaunchConfiguration('model'), "' == 'simple' else ",
+        repr(os.path.join(pkg, 'urdf', 'AG_robot.urdf.xacro'))])
     rviz_cfg = os.path.join(pkg, 'rviz', 'AG_robot.rviz')
 
     # URDF 里的 package://ag_robot_description/meshes/x.stl 由 sdformat 改写成
@@ -89,6 +95,9 @@ def generate_launch_description():
     load_arm2 = spawner('arm2_controller')
 
     return LaunchDescription([
+        DeclareLaunchArgument('model', default_value='full',
+                              description='full = 原网格版(好看但重); simple = 图元简化版(快, '
+                                          '尺寸/关节/传感器与 full 相同)'),
         DeclareLaunchArgument('gazebo_gui', default_value='true',
                               description='false = 只跑 gz sim 服务端, 不开界面'),
         DeclareLaunchArgument('rviz', default_value='true',
@@ -97,7 +106,8 @@ def generate_launch_description():
                               description='雷达朝车头下倾角度(度), 正值=下倾; '
                                           '已验证 0/15/25/35, 任意角度均可, 换角度无需重新编译'),
 
-        LogInfo(msg=['AG_robot: 雷达安装倾角 lidar_pitch = ',
+        LogInfo(msg=['AG_robot: 模型 = ', LaunchConfiguration('model'),
+                     ', 雷达安装倾角 lidar_pitch = ',
                      LaunchConfiguration('lidar_pitch'), ' 度 (正值=朝车头下倾)']),
 
         gz_sim,
