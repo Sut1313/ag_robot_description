@@ -47,10 +47,15 @@ def generate_launch_description():
         world = 'empty.sdf'
 
     gz_sim = ExecuteProcess(
-        cmd=['gz', 'sim', '-r', '-v', '3', world],
+        # Gazebo Harmonic 默认 DART 引擎不支持 SDF mimic constraint。PiPER
+        # 平行夹爪的两根手指依赖该约束，因此显式使用 Harmonic
+        # 自带且支持 mimic 的 Bullet Featherstone 物理引擎。
+        cmd=['gz', 'sim', '-r', '-v', '3',
+             '--physics-engine', 'gz-physics-bullet-featherstone-plugin', world],
         condition=IfCondition(gazebo_gui), output='screen')
     gz_sim_headless = ExecuteProcess(
-        cmd=['gz', 'sim', '-r', '-s', '-v', '3', world],
+        cmd=['gz', 'sim', '-r', '-s', '-v', '3',
+             '--physics-engine', 'gz-physics-bullet-featherstone-plugin', world],
         condition=UnlessCondition(gazebo_gui), output='screen')
 
     clock_bridge = Node(
@@ -87,6 +92,8 @@ def generate_launch_description():
     load_lift = spawner('lift_controller')
     load_arm1 = spawner('arm1_controller')
     load_arm2 = spawner('arm2_controller')
+    load_arm1_gripper = spawner('arm1_gripper_controller')
+    load_arm2_gripper = spawner('arm2_gripper_controller')
 
     return LaunchDescription([
         DeclareLaunchArgument('gazebo_gui', default_value='true',
@@ -126,4 +133,6 @@ def generate_launch_description():
         RegisterEventHandler(OnProcessExit(target_action=load_drive, on_exit=[load_lift])),
         RegisterEventHandler(OnProcessExit(target_action=load_lift, on_exit=[load_arm1])),
         RegisterEventHandler(OnProcessExit(target_action=load_arm1, on_exit=[load_arm2])),
+        RegisterEventHandler(OnProcessExit(target_action=load_arm2, on_exit=[load_arm1_gripper])),
+        RegisterEventHandler(OnProcessExit(target_action=load_arm1_gripper, on_exit=[load_arm2_gripper])),
     ])

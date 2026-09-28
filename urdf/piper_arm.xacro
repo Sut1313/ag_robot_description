@@ -11,7 +11,7 @@
        joint6 速度  5 rad/s      (之前误用 3)
        link2  质量  1.16 kg      (之前 1.17)
 
-     link6 末端按官方定义挂 flange_link, 再往外是 tool0 安装坐标系(法兰外端面)。
+     link6 末端按官方定义挂 flange_link、tool0 安装坐标系与 PiPER 平行夹爪。
      ===================================================================== -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
@@ -216,12 +216,117 @@
       <origin xyz="0 0 0" rpy="0 0 0"/>
     </joint>
 
-    <!-- 末端安装坐标系: 法兰外端面, 以后接夹爪/手爪用这个 frame -->
+    <!-- 末端安装坐标系: 法兰外端面。保留旧 frame 名以兼容现有规划与 TF 用户。 -->
     <link name="${prefix}tool0"/>
     <joint name="${prefix}link6_to_tool0" type="fixed">
       <parent link="${prefix}flange_link"/>
       <child link="${prefix}tool0"/>
       <origin xyz="0 0 0.0105" rpy="0 0 0"/>
+    </joint>
+
+    <!-- ───────── PiPER 官方平行夹爪 ─────────
+         几何、惯性、安装位姿和限位取自 agx_arm_urdf/piper/
+         urdf/piper_with_gripper_description.xacro。${prefix}gripper 是唯一主动关节，
+         位置值表示两指总开口宽度（0=闭合，0.10 m=全开）；两根指爪通过
+         mimic 分别以 +0.5/-0.5 倍联动。 -->
+    <link name="${prefix}gripper_base">
+      <inertial>
+        <origin xyz="-0.000183807162235591 8.05033155577911E-05 0.0321436689908876" rpy="0 0 0"/>
+        <mass value="0.45"/>
+        <inertia ixx="0.00092934" ixy="0.00000034" ixz="-0.00000738"
+                 iyy="0.00071447" iyz="0.00000005" izz="0.00039442"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ag_robot_description/meshes/piper_gripper_base.dae"/></geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ag_robot_description/meshes/piper_gripper_base.stl"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}gripper_base_joint" type="fixed">
+      <parent link="${prefix}flange_link"/>
+      <child link="${prefix}gripper_base"/>
+      <origin xyz="0 0 0.0045" rpy="0 0 0"/>
+    </joint>
+
+    <!-- 夹爪驱动器的抽象连杆：无几何，主关节值即总开口宽度。
+         PiPER 官方显示模型把该 link 定义为空 link，但 sdformat 会删除没有
+         inertial 的可动 link，连带删除 gripper 主关节，使后续 mimic 关节
+         找不到驱动源。下面是仅用于保留该仿真自由度的轻量虚拟惯量；
+         官方夹爪实体仍为 0.45 + 0.025 + 0.025 = 0.50 kg。 -->
+    <link name="${prefix}gripper_link">
+      <inertial>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <mass value="0.001"/>
+        <inertia ixx="1.0e-8" ixy="0" ixz="0"
+                 iyy="1.0e-8" iyz="0" izz="1.0e-8"/>
+      </inertial>
+    </link>
+    <joint name="${prefix}gripper" type="prismatic">
+      <parent link="${prefix}gripper_base"/>
+      <child link="${prefix}gripper_link"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="0" upper="0.1" effort="10" velocity="3"/>
+      <!-- 虚拟驱动关节不加摩擦，实体指爪的阻尼保留在两个 mimic 关节上。 -->
+      <dynamics damping="0" friction="0"/>
+    </joint>
+
+    <link name="${prefix}gripper_link1">
+      <inertial>
+        <origin xyz="0.00065123185041968 -0.0491929869131989 0.00972258769184025" rpy="0 0 0"/>
+        <mass value="0.025"/>
+        <inertia ixx="0.00007371" ixy="-0.00000113" ixz="0.00000021"
+                 iyy="0.00000781" iyz="-0.00001372" izz="0.0000747"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ag_robot_description/meshes/piper_gripper_link1.dae"/></geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ag_robot_description/meshes/piper_gripper_link1.stl"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}gripper_joint1" type="prismatic">
+      <parent link="${prefix}gripper_base"/>
+      <child link="${prefix}gripper_link1"/>
+      <origin xyz="0 0 0.138" rpy="1.5707963 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="0" upper="0.05" effort="10" velocity="3"/>
+      <dynamics damping="0.05" friction="0.01"/>
+      <mimic joint="${prefix}gripper" multiplier="0.5" offset="0.0"/>
+    </joint>
+
+    <link name="${prefix}gripper_link2">
+      <inertial>
+        <origin xyz="0.00065123185041968 -0.0491929869131989 0.00972258769184025" rpy="0 0 0"/>
+        <mass value="0.025"/>
+        <inertia ixx="0.00007371" ixy="-0.00000113" ixz="0.00000021"
+                 iyy="0.00000781" iyz="-0.00001372" izz="0.0000747"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ag_robot_description/meshes/piper_gripper_link2.dae"/></geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://ag_robot_description/meshes/piper_gripper_link2.stl"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}gripper_joint2" type="prismatic">
+      <parent link="${prefix}gripper_base"/>
+      <child link="${prefix}gripper_link2"/>
+      <origin xyz="0 0 0.138" rpy="1.5707963 0 -3.1415926"/>
+      <axis xyz="0 0 -1"/>
+      <limit lower="-0.05" upper="0" effort="10" velocity="3"/>
+      <dynamics damping="0.05" friction="0.01"/>
+      <mimic joint="${prefix}gripper" multiplier="-0.5" offset="0.0"/>
     </joint>
 
   </xacro:macro>

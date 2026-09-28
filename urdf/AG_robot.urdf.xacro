@@ -21,8 +21,8 @@
           ├─ wheel_1..4            四轮, continuous, 差速驱动
           ├─ base_frame_link       立柱+导轨+推杆 (固定)
           │  └─ lift_platform_link 升降台, 沿立柱 Z 向滑动
-          │     ├─ arm1_*          松灵 PiPER
-          │     └─ arm2_*          松灵 PiPER
+          │     ├─ arm1_*          松灵 PiPER + 平行夹爪
+          │     └─ arm2_*          松灵 PiPER + 平行夹爪
 
      传感器:
        Velodyne VLP-16 3D 激光雷达暂用圆柱体代替正式网格，固定在立柱顶部正中心。

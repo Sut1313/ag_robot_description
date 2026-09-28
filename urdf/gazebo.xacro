@@ -35,6 +35,33 @@
     <xacro:iface_pos name="${prefix}joint6"/>
   </xacro:macro>
 
+  <!-- PiPER 夹爪的主关节表示两指总开口宽度（0..0.10 m）。
+       两个指爪关节是 mimic 从关节，仅暴露原名状态接口，不单独接受命令。
+       联动由 URDF <mimic> 转换出的 SDF mimic constraint 完成，所以这里不再写
+       gz_ros2_control 的 mimic 参数。否则当前 Humble 插件会把 /joint_states 中的
+       关节改名为 *_mimic，导致 robot_state_publisher 无法更新指爪 TF。 -->
+  <xacro:macro name="ctl_gripper" params="prefix">
+    <joint name="${prefix}gripper">
+      <command_interface name="position">
+        <param name="min">0.0</param>
+        <param name="max">0.1</param>
+      </command_interface>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+    <joint name="${prefix}gripper_joint1">
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+    <joint name="${prefix}gripper_joint2">
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+  </xacro:macro>
+
   <ros2_control name="AGRobotSystem" type="system">
     <hardware>
       <plugin>gz_ros2_control/GazeboSimSystem</plugin>
@@ -51,6 +78,8 @@
     <xacro:iface_pos name="lift_joint"/>
     <xacro:ctl_arm prefix="arm1_"/>
     <xacro:ctl_arm prefix="arm2_"/>
+    <xacro:ctl_gripper prefix="arm1_"/>
+    <xacro:ctl_gripper prefix="arm2_"/>
   </ros2_control>
 
   <gazebo>

@@ -1,12 +1,12 @@
 # ag_robot_description
 
-**AG_robot** —— 一台四轮独立悬挂差速底盘 + 立柱/导轨丝杠升降台 + 两条松灵 **AgileX PiPER** 六轴机械臂 + **Velodyne VLP-16** 3D 激光雷达的移动操作机器人，用 URDF/xacro 描述，配套 RViz 显示与 Gazebo Harmonic 仿真。
+**AG_robot** —— 一台四轮独立悬挂差速底盘 + 立柱/导轨丝杠升降台 + 两条带官方平行夹爪的松灵 **AgileX PiPER** 六轴机械臂 + **Velodyne VLP-16** 3D 激光雷达的移动操作机器人，用 URDF/xacro 描述，配套 RViz 显示与 Gazebo Harmonic 仿真。
 
-本包**完全自包含**：24 个网格全部在 `meshes/` 下，不依赖任何其他自研包。
+本包**完全自包含**：32 个网格全部在 `meshes/` 下，不依赖任何其他自研包。
 
 ```
 底盘 ── 4 轮差速 + 独立悬挂 ── 立柱(3030 型材,T 型槽) ── 丝杠升降台(FBX150 推杆, 行程 400 mm)
-                                                        └─ 两条 PiPER 六轴臂
+                                                        └─ 两条 PiPER 六轴臂 + 平行夹爪
 ```
 
 ---
@@ -15,7 +15,7 @@
 
 ### 1. 模型结构
 
-28 个 link / 27 个关节（10 固定 + 4 连续 + 12 旋转 + 1 平移），单一根节点：
+36 个 link / 35 个关节（12 固定 + 4 连续 + 12 旋转 + 7 平移），单一根节点：
 
 ```
 base_footprint                          地面投影帧, Nav2 用; 无几何、无惯量
@@ -25,15 +25,15 @@ base_footprint                          地面投影帧, Nav2 用; 无几何、�
    └─ base_frame_link                   立柱 + 竖直导轨 + FBX150 电动推杆 (固定)
       ├─ velodyne_link                  VLP-16 雷达，暂用圆柱体，固定在立柱顶部正中心
       └─ lift_platform_link             升降台: 卡在立柱两侧竖向 T 型槽里上下滑移 (prismatic, 0–0.40 m)
-         ├─ arm1_base_link … arm1_tool0 松灵 PiPER 六轴臂 (revolute ×6 + 法兰 + tool0)
-         └─ arm2_base_link … arm2_tool0 松灵 PiPER 六轴臂
+         ├─ arm1_base_link … arm1_flange_link 松灵 PiPER 六轴臂 (revolute ×6) + 平行夹爪
+         └─ arm2_base_link … arm2_flange_link 松灵 PiPER 六轴臂 (revolute ×6) + 平行夹爪
 ```
 
 | 能力 | 说明 |
 |---|---|
 | 移动 | 四轮差速，`wheel_separation = 0.6038 m`、`wheel_radius = 0.11349 m` |
 | 升降 | 单自由度丝杠升降台，`lift_joint` 行程 `0 … 0.40 m`（`lift_travel` 参数可改） |
-| 操作 | 两条 6 轴臂，末端 `arm{1,2}_tool0` 法兰帧（外端面 z = 0.0105 m）备用夹爪 |
+| 操作 | 两条 6 轴臂 + 两套官方平行夹爪；`arm{1,2}_gripper` 的 0–0.10 m 表示两指总开口宽度 |
 | 传感器 | VLP-16 3D 雷达：16 线、360°、10 Hz，Gazebo 发布点云并由 RViz 默认显示；相机暂未启用 |
 
 > **另有一个"图元简化版"，已拆成独立包**（2026-09-26）：本包是 SolidWorks 网格版（整车约
@@ -51,7 +51,7 @@ base_footprint                          地面投影帧, Nav2 用; 无几何、�
 | 显示 | `launch/display.launch.py`：robot_state_publisher + joint_state_publisher_gui 滑条 + RViz2 |
 | 仿真 | `launch/gazebo.launch.py`：Gazebo **Harmonic**（gz-sim 8）+ `gz_ros2_control` + VLP-16 话题桥接 + RViz；支持 `lidar_pitch` 参数切换四种雷达姿态（见七.8）|
 | 世界 | `worlds/ag_robot.sdf`：斜射太阳、阴影及 3 个雷达演示障碍物（见第七节） |
-| 控制器 | 5 个：`joint_state_broadcaster`、`diff_drive_controller`、`lift_controller`、`arm1_controller`、`arm2_controller`（后三个都是 `JointTrajectoryController`） |
+| 控制器 | 7 个：`joint_state_broadcaster`、`diff_drive_controller`、`lift_controller`、两个机械臂控制器和两个夹爪控制器（后五个都是 `JointTrajectoryController`） |
 
 ---
 
@@ -61,16 +61,16 @@ base_footprint                          地面投影帧, Nav2 用; 无几何、�
 ag_robot_description/
 ├── urdf/
 │   ├── AG_robot.urdf.xacro        整车模型（要改就改这个）
-│   ├── piper_arm.xacro            单条 PiPER 六轴臂宏（参数核对过官方 URDF）
+│   ├── piper_arm.xacro            单条 PiPER 六轴臂 + 平行夹爪宏（参数核对过官方 URDF）
 │   ├── gazebo.xacro               gz_ros2_control + 轮子摩擦 + VLP-16 GPU lidar
 │   └── sensors_disabled.xacro     旧版 2D 雷达/相机定义，当前未 include
 ├── meshes/
 │   ├── *.stl                      车体 8 个（底盘/导轨/立柱/升降台/4 轮，毫米制）
-│   │                              + 臂碰撞 8 个（官方网格，米制）
+│   │                              + 臂/夹爪碰撞 11 个（官方网格，米制）
 │   │                              + 旧传感器 2 个（car_camera_link / car_laser，当前未引用）
-│   ├── *.dae                      臂视觉 8 个（官方网格，米制，不加 scale）
+│   ├── *.dae                      臂/夹爪视觉 11 个（官方网格，米制，不加 scale）
 │   └── *.obj + ag_robot.mtl       SolidWorks 导出的**逐部件配色源数据**，当前不参与渲染，且不进版本库（见 .gitignore）
-├── config/ros2_control.yaml       差速 + 升降 + 双臂 共 5 个控制器
+├── config/ros2_control.yaml       差速 + 升降 + 双臂 + 双夹爪 共 7 个控制器
 ├── launch/
 │   ├── display.launch.py          RViz
 │   └── gazebo.launch.py           gz sim + ROS 桥接 + RViz
@@ -98,6 +98,7 @@ ag_robot_description/
 
 - **ROS 2 Humble**（本包在 Humble 上开发验证）
 - **Gazebo Harmonic**（`gz sim` 8.x）。**不要**用 Gazebo Classic：`gazebo.xacro` 走的是 `gz_ros2_control` 那套插件，Classic 里不适用
+- Gazebo 的 **Bullet Featherstone** 物理插件（`gz-harmonic` 默认安装）。PiPER 平行夹爪依赖 SDF mimic constraint，Harmonic 默认 DART 引擎不支持它
 
 ### 2. apt 依赖
 
@@ -150,7 +151,7 @@ ros2 launch ag_robot_description display.launch.py
 # 只开 RViz、不要滑条窗口：gui:=false
 ```
 
-会打开 `joint_state_publisher_gui` 滑条，拖动即可看升降台和两条臂的运动。
+会打开 `joint_state_publisher_gui` 滑条，拖动即可看升降台、两条臂和两套夹爪的运动。
 
 > ⚠ **不要和 Gazebo 仿真同时开**：滑条窗口会往 `/joint_states` 发消息，和仿真里的
 > `joint_state_broadcaster` 互相打架，TF 会抖。看 RViz 时先关掉仿真。
@@ -163,6 +164,8 @@ ros2 launch ag_robot_description gazebo.launch.py gazebo_gui:=false   # 无界�
 ros2 launch ag_robot_description gazebo.launch.py rviz:=false     # 不打开 RViz
 ```
 
+launch 会自动用 `gz-physics-bullet-featherstone-plugin` 启动 Gazebo。不要手工删掉该参数换回默认 DART，否则两根指爪的 mimic 约束不会建立。
+
 **切换雷达安装倾角**（四种姿态的实测对比见七.8；xacro 在 launch 时才展开，所以**换角度不需要重新编译**）：
 
 ```bash
@@ -174,7 +177,7 @@ ros2 launch ag_robot_description gazebo.launch.py lidar_pitch:=35
 
 `lidar_pitch` 单位是度，**正值 = 朝车头方向（`base_frame_link` 的 −Y）下倾**，填任意角度都可以（例如 `:=18.5`）。启动日志里会打印当前倾角。
 
-启动流程：`gz sim` 加载 `worlds/ag_robot.sdf` → `ros_gz_sim create` 在 z=0.003 处生成 `AG_robot` → 桥接 `/clock`、雷达 LaserScan 和 PointCloud2 → 打开 RViz → `robot_state_publisher` → 依次加载 5 个控制器。
+启动流程：`gz sim` 加载 `worlds/ag_robot.sdf` → `ros_gz_sim create` 在 z=0.003 处生成 `AG_robot` → 桥接 `/clock`、雷达 LaserScan 和 PointCloud2 → 打开 RViz → `robot_state_publisher` → 依次加载 7 个控制器。
 
 ### 3. 控制器与话题
 
@@ -184,7 +187,8 @@ ros2 launch ag_robot_description gazebo.launch.py lidar_pitch:=35
 | `/diff_drive_controller/odom` | `nav_msgs/msg/Odometry` | 里程计（同时发布 `odom → base_link` 的 TF） |
 | `/lift_controller/follow_joint_trajectory` | `control_msgs/action/FollowJointTrajectory` | 升降台（关节 `lift_joint`，单位 m） |
 | `/arm1_controller/follow_joint_trajectory`、`/arm2_controller/…` | 同上 | 两条臂（各 6 关节，rad） |
-| `/joint_states` | `sensor_msgs/msg/JointState` | 17 个可动关节 |
+| `/arm1_gripper_controller/follow_joint_trajectory`、`/arm2_gripper_controller/…` | 同上 | 夹爪总开口宽度（0–0.10 m） |
+| `/joint_states` | `sensor_msgs/msg/JointState` | 23 个可动关节（含 4 个 mimic 指爪关节） |
 | `/velodyne_points` | `sensor_msgs/msg/PointCloud2` | 完整 16 线 3D 点云，RViz 默认显示 |
 | `/velodyne_scan` | `sensor_msgs/msg/LaserScan` | 底层扫描调试；消息不含垂直维度，3D 应用请使用 PointCloud2 |
 
@@ -202,6 +206,11 @@ ros2 action send_goal /lift_controller/follow_joint_trajectory \
   control_msgs/action/FollowJointTrajectory \
   "{trajectory: {joint_names: [lift_joint], points: [{positions: [0.15], time_from_start: {sec: 2}}]}}"
 
+# 1 号臂夹爪打开到 80 mm（换成 0.0 即闭合）
+ros2 action send_goal /arm1_gripper_controller/follow_joint_trajectory \
+  control_msgs/action/FollowJointTrajectory \
+  "{trajectory: {joint_names: [arm1_gripper], points: [{positions: [0.08], time_from_start: {sec: 1}}]}}"
+
 # 看控制器状态 / 关节状态 / TF
 ros2 control list_controllers
 ros2 topic echo --once /joint_states
@@ -218,8 +227,10 @@ ros2 run tf2_tools view_frames        # 生成 frames.pdf
 base_footprint
 └─ base_link ─┬─ imu_link
               ├─ wheel_1 … wheel_4
-              └─ base_frame_link ── lift_platform_link ─┬─ arm1_base_link → arm1_link1…6 → arm1_flange_link → arm1_tool0
-                                                        └─ arm2_base_link → arm2_link1…6 → arm2_flange_link → arm2_tool0
+              └─ base_frame_link ── lift_platform_link ─┬─ arm1_base_link → arm1_link1…6 → arm1_flange_link ─┬─ arm1_tool0
+                                                        │                                                   └─ arm1_gripper_base → 夹爪主关节 + 两个 mimic 指爪
+                                                        └─ arm2_base_link → arm2_link1…6 → arm2_flange_link ─┬─ arm2_tool0
+                                                                                                            └─ arm2_gripper_base → 夹爪主关节 + 两个 mimic 指爪
 ```
 
 ### 2. IMU
@@ -261,7 +272,7 @@ base_footprint
 | 两臂间距 | 377.732 mm（沿 x），臂安装面 z = 32 mm |
 | 立柱顶 / 推杆顶 | 离地 1.13 m / 1.34 m |
 
-### 质量与惯量（当前 URDF 内的值，整车合计约 **79.14 kg**）
+### 质量与惯量（当前 URDF 内的值，整车合计约 **80.14 kg**）
 
 | link | 质量 (kg) | 惯量 origin (m) | ixx / iyy / izz |
 |---|---|---|---|
@@ -270,9 +281,12 @@ base_footprint
 | `base_frame_link` | 25.293 | (0, −0.114898, 0.455004) | 1.783 / 2.280 / 0.557 |
 | `lift_platform_link` | 3.602 | (0, −0.202447, 0.117) | 0.026 / 0.091 / 0.085 |
 | 臂连杆 ×7 + 法兰 | 4.210 / 条 | 官方值 | 官方完整惯量张量 |
+| `arm{1,2}_gripper_base` | 0.450 / 套 | 官方值 | 官方完整惯量张量 |
+| `arm{1,2}_gripper_link1/2` | 0.025 ×2 / 套 | 官方值 | 官方完整惯量张量 |
+| `arm{1,2}_gripper_link` | 0.001 / 套 | (0, 0, 0) | 1e−8 / 1e−8 / 1e−8（仿真虚拟连杆） |
 | `velodyne_link` | 0.590 | (0, 0, 0) | 0.000547 / 0.000547 / 0.000584 |
 
-> **这些是估算值，不是实测**：车体/轮/立柱/升降台按"网格体积 × 密度"算质量（铝 2.7，FBX150 推杆按钢 7.85），惯量按"包围盒均质长方体"近似；只有机械臂用的是官方 URDF 的完整惯量。要接实际控制器，建议用实测质量替换。**`base_frame_link` 的 25.3 kg 尤其可疑**（推杆按钢算偏重，真实 FBX150 大约 8–15 kg）。
+> **这些是估算值，不是实测**：车体/轮/立柱/升降台按"网格体积 × 密度"算质量（铝 2.7，FBX150 推杆按钢 7.85），惯量按"包围盒均质长方体"近似；机械臂和夹爪实体使用官方 URDF 的完整惯量。要接实际控制器，建议用实测质量替换。**`base_frame_link` 的 25.3 kg 尤其可疑**（推杆按钢算偏重，真实 FBX150 大约 8–15 kg）。
 
 ### 机械臂安装点（用户实测值）
 
@@ -282,6 +296,7 @@ base_footprint
 ```
 
 臂本体参数（关节限位/速度/惯量/网格）与官方仓库 [agilexrobotics/agx_arm_urdf](https://github.com/agilexrobotics/agx_arm_urdf) 的 `piper_description.urdf` 逐项核对一致。
+夹爪基座和两根指爪同样使用官方质量、惯量、安装位姿和网格；只有无几何的 `gripper_link` 增加了 1 g 虚拟质量，以避免 sdformat 删除该可动 link 及夹爪主关节。
 
 ---
 
@@ -485,6 +500,14 @@ ros2 launch ag_robot_description gazebo.launch.py rviz:=false lidar_pitch:=35
 | VLP-16 3D 雷达 | 正式 CAD 尚未完成 | 立柱顶部新增临时圆柱 link；Gazebo 16 线 GPU lidar、ROS 桥接、RViz 点云及演示障碍物已接通 |
 | 雷达倾角参数化 | 要对比四种雷达姿态做 SLAM 选型，逐姿态改文件太笨 | 新增 `lidar_pitch` 参数（0/15/25/35 与历史标签逐值一致）、两个 launch 透传、脚本改从 TF 读姿态；新增四姿态对比表与 `lidar_pose_sweep.sh`（见七.8）|
 | 雷达盲区实测 | 需要确认自遮挡与近场覆盖 | 实测三种姿态下本体遮挡 0 条射线；近场地面盲环半径 3.44 m、安装姿态实测倾斜 ≤0.01°，附可视锥面公式与实测脚本（见七.7） |
+
+### 2026-09-28：官方 PiPER 夹爪仿真适配
+
+- 保留官方夹爪基座/指爪的网格、质量、惯量、位姿和 0–0.10 m 总开度语义。
+- 给官方空 `gripper_link` 增加仅供 Gazebo 保留主关节的轻量虚拟惯量。
+- Gazebo 改用 Bullet Featherstone，由 SDF mimic constraint 驱动左右指爪。
+- 移除 `ros2_control` 中重复的 mimic 参数，`/joint_states` 保留官方关节名，RViz/TF 与 Gazebo 运动一致。
+- 实测两套夹爪控制器均能正常激活；1 号夹爪总开度 0.080 m 时两指分别约 +0.040/−0.040 m，2 号夹爪 0.060 m 时分别约 +0.030/−0.030 m，开合动作成功。
 
 ---
 
