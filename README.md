@@ -1,12 +1,14 @@
 # ag_robot_description
 
-**AG_robot** —— 一台四轮独立悬挂差速底盘 + 立柱/导轨丝杠升降台 + 两条带官方平行夹爪的松灵 **AgileX PiPER** 六轴机械臂 + **Velodyne VLP-16** 3D 激光雷达的移动操作机器人，用 URDF/xacro 描述，配套 RViz 显示与 Gazebo Harmonic 仿真。
+**AG_robot** —— 一台四轮独立悬挂差速底盘 + 立柱/导轨丝杠升降台 + 两条带平行夹爪的松灵 **AgileX PiPER** 六轴机械臂 + 头部保护壳 + **Intel RealSense D435i** + **Velodyne VLP-16** 的移动操作机器人，用 URDF/xacro 描述，配套 RViz 显示与 Gazebo Harmonic 仿真。
 
-本包**完全自包含**：32 个网格全部在 `meshes/` 下，不依赖任何其他自研包。
+本包**完全自包含**：35 个网格全部在 `meshes/` 下，不依赖任何其他自研包。
 
 ```
-底盘 ── 4 轮差速 + 独立悬挂 ── 立柱(3030 型材,T 型槽) ── 丝杠升降台(FBX150 推杆, 行程 400 mm)
-                                                        └─ 两条 PiPER 六轴臂 + 平行夹爪
+底盘 ── 4 轮差速 + 独立悬挂 ── 立柱(3030 型材,T 型槽)
+                               ├─ 头部保护壳 ─┬─ 前部 D435i RGB-D + IMU
+                               │              └─ 顶部 VLP-16
+                               └─ 丝杠升降台(FBX150, 400 mm) ── 两条 PiPER + 夹爪
 ```
 
 ---
@@ -15,7 +17,7 @@
 
 ### 1. 模型结构
 
-36 个 link / 35 个关节（12 固定 + 4 连续 + 12 旋转 + 7 平移），单一根节点：
+43 个 link / 42 个关节（19 固定 + 4 连续 + 12 旋转 + 7 平移），单一根节点：
 
 ```
 base_footprint                          地面投影帧, Nav2 用; 无几何、无惯量
@@ -23,7 +25,9 @@ base_footprint                          地面投影帧, Nav2 用; 无几何、�
    ├─ imu_link                          IMU 坐标系, 无几何(IMU 集成在主控上)
    ├─ wheel_1 … wheel_4                 四轮, continuous, 差速驱动
    └─ base_frame_link                   立柱 + 竖直导轨 + FBX150 电动推杆 (固定)
-      ├─ velodyne_link                  VLP-16 雷达，暂用圆柱体，固定在立柱顶部正中心
+      ├─ head_link                      STEP 精确头部保护壳（130×130×128 mm）
+      │  ├─ camera_link                 STEP 精确 D435i 外形 + RGB / Depth / IMU 坐标帧
+      │  └─ velodyne_link                STEP 精确 VLP-16 外形，支持 `lidar_pitch`
       └─ lift_platform_link             升降台: 卡在立柱两侧竖向 T 型槽里上下滑移 (prismatic, 0–0.40 m)
          ├─ arm1_base_link … arm1_flange_link 松灵 PiPER 六轴臂 (revolute ×6) + 平行夹爪
          └─ arm2_base_link … arm2_flange_link 松灵 PiPER 六轴臂 (revolute ×6) + 平行夹爪
@@ -34,7 +38,7 @@ base_footprint                          地面投影帧, Nav2 用; 无几何、�
 | 移动 | 四轮差速，`wheel_separation = 0.6038 m`、`wheel_radius = 0.11349 m` |
 | 升降 | 单自由度丝杠升降台，`lift_joint` 行程 `0 … 0.40 m`（`lift_travel` 参数可改） |
 | 操作 | 两条 6 轴臂 + 两套官方平行夹爪；`arm{1,2}_gripper` 的 0–0.10 m 表示两指总开口宽度 |
-| 传感器 | VLP-16 3D 雷达：16 线、360°、10 Hz，Gazebo 发布点云并由 RViz 默认显示；相机暂未启用 |
+| 传感器 | VLP-16：16 线、360°、10 Hz；D435i：独立 RGB / Depth / PointCloud2 / CameraInfo + 200 Hz IMU；均已接 Gazebo↔ROS 桥接 |
 
 > **另有一个"图元简化版"，已拆成独立包**（2026-09-26）：本包是 SolidWorks 网格版（整车约
 > 252 万面，实测实时率约 0.31、配 10 Hz 的雷达实际只出 3.2 Hz）；等价但轻得多的图元版
@@ -49,7 +53,7 @@ base_footprint                          地面投影帧, Nav2 用; 无几何、�
 | 项 | 内容 |
 |---|---|
 | 显示 | `launch/display.launch.py`：robot_state_publisher + joint_state_publisher_gui 滑条 + RViz2 |
-| 仿真 | `launch/gazebo.launch.py`：Gazebo **Harmonic**（gz-sim 8）+ `gz_ros2_control` + VLP-16 话题桥接 + RViz；支持 `lidar_pitch` 参数切换四种雷达姿态（见七.8）|
+| 仿真 | `launch/gazebo.launch.py`：Gazebo **Harmonic**（gz-sim 8）+ `gz_ros2_control` + VLP-16 / D435i 话题桥接 + RViz；支持 `lidar_pitch` |
 | 世界 | `worlds/ag_robot.sdf`：斜射太阳、阴影及 3 个雷达演示障碍物（见第七节） |
 | 控制器 | 7 个：`joint_state_broadcaster`、`diff_drive_controller`、`lift_controller`、两个机械臂控制器和两个夹爪控制器（后五个都是 `JointTrajectoryController`） |
 
@@ -62,11 +66,12 @@ ag_robot_description/
 ├── urdf/
 │   ├── AG_robot.urdf.xacro        整车模型（要改就改这个）
 │   ├── piper_arm.xacro            单条 PiPER 六轴臂 + 平行夹爪宏（参数核对过官方 URDF）
-│   ├── gazebo.xacro               gz_ros2_control + 轮子摩擦 + VLP-16 GPU lidar
+│   ├── gazebo.xacro               gz_ros2_control + 轮子摩擦 + VLP-16 + D435i RGB-D/IMU
 │   └── sensors_disabled.xacro     旧版 2D 雷达/相机定义，当前未 include
 ├── meshes/
 │   ├── *.stl                      车体 8 个（底盘/导轨/立柱/升降台/4 轮，毫米制）
 │   │                              + 臂/夹爪碰撞 11 个（官方网格，米制）
+│   │                              + 头壳 / D435i / VLP-16 精确 STEP 网格 3 个（毫米制）
 │   │                              + 旧传感器 2 个（car_camera_link / car_laser，当前未引用）
 │   ├── *.dae                      臂/夹爪视觉 11 个（官方网格，米制，不加 scale）
 │   └── *.obj + ag_robot.mtl       SolidWorks 导出的**逐部件配色源数据**，当前不参与渲染，且不进版本库（见 .gitignore）
@@ -74,7 +79,7 @@ ag_robot_description/
 ├── launch/
 │   ├── display.launch.py          RViz
 │   └── gazebo.launch.py           gz sim + ROS 桥接 + RViz
-├── rviz/AG_robot.rviz             RViz 配置（机器人 + TF + /velodyne_points，Fixed Frame = base_link）
+├── rviz/AG_robot.rviz             RViz 配置（机器人 + TF + 雷达/深度点云 + RGB 图像）
 ├── scripts/                       雷达测量与校验工具（仿真运行时执行，见七.7 / 七.8）
 │   ├── lidar_blind_zone.py        抓一帧点云做盲区分类统计（倾角自动从 TF 读）
 │   ├── lidar_target_check.py      近场靶标校验（配 worlds/lidar_blindzone_targets.sdf）
@@ -82,6 +87,9 @@ ag_robot_description/
 │   ├── spawn_lidar_targets.py     按当前雷达位姿摆靶板（任意倾角都自动对齐）
 │   └── lidar_pose_sweep.sh        四种倾角依次起仿真测盲区，输出对比表
 ├── docs/lidar_poses/              四种倾角的点云俯视图（七.8 引用）
+├── docs/head_sensors_cad.json     STEP 零件、包围盒、原点和颜色提取记录
+├── docs/head_sensors_preview.png  头部、D435i 与 VLP-16 的 CAD 布置预览
+├── docs/d435i_simulation_parameters.md  D435i 参数、外参转换与官方来源
 ├── worlds/
 │   ├── ag_robot.sdf               仿真世界（注意：世界名是 ag_robot，不是 empty）
 │   └── lidar_blindzone_targets.sdf 近场盲区校验靶板（0.40/0.48/0.52/0.68 m 四块）
@@ -98,7 +106,6 @@ ag_robot_description/
 
 - **ROS 2 Humble**（本包在 Humble 上开发验证）
 - **Gazebo Harmonic**（`gz sim` 8.x）。**不要**用 Gazebo Classic：`gazebo.xacro` 走的是 `gz_ros2_control` 那套插件，Classic 里不适用
-- Gazebo 的 **Bullet Featherstone** 物理插件（`gz-harmonic` 默认安装）。PiPER 平行夹爪依赖 SDF mimic constraint，Harmonic 默认 DART 引擎不支持它
 
 ### 2. apt 依赖
 
@@ -164,9 +171,7 @@ ros2 launch ag_robot_description gazebo.launch.py gazebo_gui:=false   # 无界�
 ros2 launch ag_robot_description gazebo.launch.py rviz:=false     # 不打开 RViz
 ```
 
-launch 会自动用 `gz-physics-bullet-featherstone-plugin` 启动 Gazebo。不要手工删掉该参数换回默认 DART，否则两根指爪的 mimic 约束不会建立。
-
-**切换雷达安装倾角**（四种姿态的实测对比见七.8；xacro 在 launch 时才展开，所以**换角度不需要重新编译**）：
+**切换雷达安装倾角**（xacro 在 launch 时才展开，所以**换角度不需要重新编译**）：
 
 ```bash
 ros2 launch ag_robot_description gazebo.launch.py lidar_pitch:=0     # 水平（默认）
@@ -177,7 +182,7 @@ ros2 launch ag_robot_description gazebo.launch.py lidar_pitch:=35
 
 `lidar_pitch` 单位是度，**正值 = 朝车头方向（`base_frame_link` 的 −Y）下倾**，填任意角度都可以（例如 `:=18.5`）。启动日志里会打印当前倾角。
 
-启动流程：`gz sim` 加载 `worlds/ag_robot.sdf` → `ros_gz_sim create` 在 z=0.003 处生成 `AG_robot` → 桥接 `/clock`、雷达 LaserScan 和 PointCloud2 → 打开 RViz → `robot_state_publisher` → 依次加载 7 个控制器。
+启动流程：`gz sim` 加载 `worlds/ag_robot.sdf` → `ros_gz_sim create` 在 z=0.003 处生成 `AG_robot` → 桥接 `/clock`、VLP-16、D435i RGB/Depth/PointCloud/IMU → 打开 RViz → `robot_state_publisher` → 依次加载 7 个控制器。
 
 ### 3. 控制器与话题
 
@@ -191,6 +196,14 @@ ros2 launch ag_robot_description gazebo.launch.py lidar_pitch:=35
 | `/joint_states` | `sensor_msgs/msg/JointState` | 23 个可动关节（含 4 个 mimic 指爪关节） |
 | `/velodyne_points` | `sensor_msgs/msg/PointCloud2` | 完整 16 线 3D 点云，RViz 默认显示 |
 | `/velodyne_scan` | `sensor_msgs/msg/LaserScan` | 底层扫描调试；消息不含垂直维度，3D 应用请使用 PointCloud2 |
+| `/camera/color/image_raw` | `sensor_msgs/msg/Image` | D435i RGB 图像，848×480@30 Hz |
+| `/camera/color/camera_info` | `sensor_msgs/msg/CameraInfo` | RGB 独立内参，frame=`camera_color_optical_frame` |
+| `/camera/depth/image_raw` | `sensor_msgs/msg/Image` | D435i 深度图，848×480@30 Hz |
+| `/camera/depth/camera_info` | `sensor_msgs/msg/CameraInfo` | Depth 独立内参，frame=`camera_depth_optical_frame` |
+| `/camera/depth/points` | `sensor_msgs/msg/PointCloud2` | 深度点云，供建图/导航/抓取使用 |
+| `/camera/imu` | `sensor_msgs/msg/Imu` | D435i IMU，默认 200 Hz，frame=`camera_imu_frame` |
+
+D435i 默认使用 librealsense 官方参考设备的 848×480 内参。拿到你手上那台的实机标定后，可在 launch 命令行覆盖 `camera_depth_{fx,fy,cx,cy}` 和 `camera_color_{fx,fy,cx,cy}`；话题名与消费端都不需要改。
 
 ```bash
 # 底盘：前进 0.3 m/s（顶一下 Ctrl+C 停）
@@ -227,10 +240,12 @@ ros2 run tf2_tools view_frames        # 生成 frames.pdf
 base_footprint
 └─ base_link ─┬─ imu_link
               ├─ wheel_1 … wheel_4
-              └─ base_frame_link ── lift_platform_link ─┬─ arm1_base_link → arm1_link1…6 → arm1_flange_link ─┬─ arm1_tool0
-                                                        │                                                   └─ arm1_gripper_base → 夹爪主关节 + 两个 mimic 指爪
-                                                        └─ arm2_base_link → arm2_link1…6 → arm2_flange_link ─┬─ arm2_tool0
-                                                                                                            └─ arm2_gripper_base → 夹爪主关节 + 两个 mimic 指爪
+              └─ base_frame_link ─┬─ head_link ─┬─ camera_link ─┬─ camera_color_frame ── camera_color_optical_frame
+                                    │              ├─ camera_depth_frame ── camera_depth_optical_frame
+                                    │              └─ camera_imu_frame
+                                    │           └─ velodyne_link
+                                    └─ lift_platform_link ─┬─ arm1_base_link → arm1_link1…6 → 夹爪
+                                                           └─ arm2_base_link → arm2_link1…6 → 夹爪
 ```
 
 ### 2. IMU
@@ -241,7 +256,11 @@ base_footprint
 - 换算到 `base_footprint`：`(0, 0, 0.1431) m`
 - 发 `sensor_msgs/Imu` 时用它做 frame；装在别处就改 `imu_joint` 的 origin
 
-### 3. ⚠ `base_link` 的轴约定与 ROS 惯例不一致（**未处理，见第八节**）
+### 3. D435i 坐标帧
+
+`camera_link` 采用 REP-103 body 约定（+X 前、+Y 左、+Z 上）；`camera_*_optical_frame` 采用 ROS/OpenCV 光学约定（+X 右、+Y 下、+Z 前）。RGB、Depth 和 IMU 不是随意共点：默认使用 librealsense 官方 D435i 参考设备外参，实机标定数据优先。
+
+### 4. ⚠ `base_link` 的轴约定与 ROS 惯例不一致（**未处理，见第八节**）
 
 `base_link` 沿用 SolidWorks 装配坐标（网格就是这套坐标）：
 
@@ -271,8 +290,11 @@ base_footprint
 | 升降驱动 | FBX150 有效行程 700 mm 电动推杆、本体 909 mm；URDF 内行程限 400 mm |
 | 两臂间距 | 377.732 mm（沿 x），臂安装面 z = 32 mm |
 | 立柱顶 / 推杆顶 | 离地 1.13 m / 1.34 m |
+| 头部保护壳 | 130 × 130 × 128 mm，底面中心 `(0, -0.121797, 0.911)` m（`base_frame_link`）|
+| D435i CAD 外形 | 90 × 25.05 × 25 mm，前部安装 |
+| VLP-16 CAD 包围 | 103.300 × 143.300 × 72 mm，默认本体中心 z=1.068 m（`base_frame_link`）|
 
-### 质量与惯量（当前 URDF 内的值，整车合计约 **80.14 kg**）
+### 质量与惯量（当前 URDF 内的值，整车合计约 **80.21 kg**）
 
 | link | 质量 (kg) | 惯量 origin (m) | ixx / iyy / izz |
 |---|---|---|---|
@@ -281,12 +303,11 @@ base_footprint
 | `base_frame_link` | 25.293 | (0, −0.114898, 0.455004) | 1.783 / 2.280 / 0.557 |
 | `lift_platform_link` | 3.602 | (0, −0.202447, 0.117) | 0.026 / 0.091 / 0.085 |
 | 臂连杆 ×7 + 法兰 | 4.210 / 条 | 官方值 | 官方完整惯量张量 |
-| `arm{1,2}_gripper_base` | 0.450 / 套 | 官方值 | 官方完整惯量张量 |
-| `arm{1,2}_gripper_link1/2` | 0.025 ×2 / 套 | 官方值 | 官方完整惯量张量 |
-| `arm{1,2}_gripper_link` | 0.001 / 套 | (0, 0, 0) | 1e−8 / 1e−8 / 1e−8（仿真虚拟连杆） |
-| `velodyne_link` | 0.590 | (0, 0, 0) | 0.000547 / 0.000547 / 0.000584 |
+| `head_link` | 1.000（估算）| (0, −0.000183, 0.071290) | 0.002774 / 0.002774 / 0.002817 |
+| `camera_link` | 0.072 | (−0.012950, 0, 0) | 0.0000524 / 0.0000075 / 0.0000524 |
+| `velodyne_link` | 0.590 | (0, 0, 0) | 0.000648 / 0.000648 / 0.000787 |
 
-> **这些是估算值，不是实测**：车体/轮/立柱/升降台按"网格体积 × 密度"算质量（铝 2.7，FBX150 推杆按钢 7.85），惯量按"包围盒均质长方体"近似；机械臂和夹爪实体使用官方 URDF 的完整惯量。要接实际控制器，建议用实测质量替换。**`base_frame_link` 的 25.3 kg 尤其可疑**（推杆按钢算偏重，真实 FBX150 大约 8–15 kg）。
+> **这些是估算值，不是实测**：STEP 未带出头壳/传感器材料密度与质量属性；头壳惯量按包围盒近似。车体/轮/立柱/升降台也是按"网格体积 × 密度"与均质包围盒估算；只有机械臂用的是官方 URDF 完整惯量。接实际控制器前建议用实测质量替换。
 
 ### 机械臂安装点（用户实测值）
 
@@ -296,7 +317,6 @@ base_footprint
 ```
 
 臂本体参数（关节限位/速度/惯量/网格）与官方仓库 [agilexrobotics/agx_arm_urdf](https://github.com/agilexrobotics/agx_arm_urdf) 的 `piper_description.urdf` 逐项核对一致。
-夹爪基座和两根指爪同样使用官方质量、惯量、安装位姿和网格；只有无几何的 `gripper_link` 增加了 1 g 虚拟质量，以避免 sdformat 删除该可动 link 及夹爪主关节。
 
 ---
 
@@ -307,6 +327,7 @@ base_footprint
 | 网格 | 单位 | scale |
 |---|---|---|
 | 车体 `*.stl`（底盘/导轨/立柱/升降台/四轮）| 毫米 | `0.001`（集中在 `mesh_scale` 属性一处）|
+| 头壳 / D435i / VLP-16 `*.stl`（由 `robot_model(1).STEP` 导出）| 毫米 | `0.001` |
 | 臂 `*.dae` / `*.stl`（官方网格）| 米 | **不加 scale** |
 
 ### 2. 车体视觉用 `.stl` 而不是 `.obj`（**颜色问题**）
@@ -334,29 +355,53 @@ SolidWorks 导出的 `.obj` 自带逐部件颜色（`ag_robot.mtl` 里 9 档灰�
 | 升降台 / 导轨 | `alu 0.78 0.79 0.81` | 亮铝 |
 | 四个轮子 | `black 0.06 0.06 0.07` | 近黑 |
 | 两条臂 | 官方 `.dae` 自带材质 | 深灰 + 蓝（accent） |
+| 头壳 / D435i / VLP-16 | `cad_head_surface 0.792157 0.819608 0.933333` | STEP 内 87 个 styled item 的唯一表面色 |
 
 > 颜色值写在 `urdf/AG_robot.urdf.xacro` 顶部的 `<material>` 定义里。注意 **sdformat 把 URDF 颜色转 SDF 时会统一 ×1.25**，所以按 URDF 值调色要留这个余量。改完 `colcon build` 重启仿真即可。
 
-### 6. VLP-16 临时模型与扫描参数
+### 6. VLP-16 精确模型与扫描参数
 
-雷达临时使用直径 89 mm、高 72 mm 的圆柱体，固定在 `base_frame_link` 顶部正中心。立柱网格实测中心为 `(0, -0.114898)` m、顶面 `z=0.911` m，所以 `velodyne_joint` 的暂定位姿是 `(0, -0.114898, 0.947)` m。正式 CAD 网格完成后，替换 `velodyne_link` 的 visual/collision，再精调这一处 origin 即可。
+雷达使用 `robot_model(1).STEP` 直接导出的 `vlp16.stl`，包含本体和后部接口外形；碰撞体使用主体包络圆柱以减少物理计算量。STEP 默认水平姿态下，`velodyne_link` 本体中心在 `base_frame_link` 中为 `(0, -0.121796720, 1.068)` m，扫描光心沿 link +Z 偏移 10 mm。
 
 Gazebo 使用 `gpu_lidar` 模拟当前官方 VLP-16：水平 360°、垂直 40°、16 线、量程 0.5–200 m、距离分辨率 1 cm。官方 ±3 cm 精度近似按 ±3σ 建模，因此 Gaussian 噪声标准差取 1 cm。当前设为 10 Hz、每圈 1800 个水平采样，即约 28.8 万点/秒；改成 20 Hz 时约 57.6 万点/秒，接近官方标称的约 60 万点/秒。世界中额外放置了墙、方箱和圆柱，便于直接观察 3D 扫描轮廓。
 
-**安装倾角是参数化的**：`velodyne_joint` 的位姿由 xacro 参数 `lidar_pitch`（度）驱动，`lidar_pitch:=0` 时就是上面这个水平位姿。倾角同时决定安装高度 —— 倾斜后圆柱的最低外缘必须仍落在立柱顶面 `z=0.911 m` 上（否则穿模），所以 joint 的 z 随倾角抬高：
+**安装倾角是参数化的**：`velodyne_joint` 现在的父节点是 `head_link`。正值朝车头下倾；为保持 STEP 默认的 7 mm 嵌入量，z 随外廓自动抬高：
 
 ```
-z(pitch) = 0.911 + (h/2)·cos(pitch) + r·sin(pitch) = 0.911 + 0.036·cos(pitch) + 0.0445·sin(pitch)
+z_head(pitch) = 0.121 + 0.036·cos(pitch) + 0.05165·sin(pitch)
 ```
 
-| `lidar_pitch` | joint z | 光心离地 |
+| `lidar_pitch` | joint z（相对 `head_link`）| 光心离地（TF 理论值）|
 |---|---|---|
-| 0° | 0.9470 m | 1.1755 m |
-| 15° | 0.9573 m | 1.1854 m |
-| 25° | 0.9624 m | 1.1900 m |
-| 35° | 0.9660 m | 1.1927 m |
+| 0° | 0.157000 m | 1.296486 m |
+| 15° | 0.169141 m | 1.308286 m |
+| 25° | 0.175455 m | 1.314004 m |
+| 35° | 0.180115 m | 1.317792 m |
 
-### 7. 盲区实测（仿真测定）
+### 6.1 D435i 仿真参数
+
+默认 profile 选用 RGB 和 Depth 都支持的 **848×480@30 Hz**，在 Gazebo 实时性与 D435i 视场之间取平衡。`lens/intrinsics` 会同时驱动渲染投影和 `CameraInfo`：
+
+| 流 | fx | fy | cx | cy | 失真 |
+|---|---:|---:|---:|---:|---|
+| Depth 848×480 | 418.264679 | 418.264679 | 424.157623 | 238.239838 | Brown，k1..p2 = 0 |
+| Color 848×480 | 605.392456 | 605.613159 | 428.644714 | 241.265488 | inverse Brown，k1..p2 = 0 |
+
+这些数字来自 [librealsense 官方 D435i 参考设备](https://github.com/IntelRealSense/librealsense/blob/master/unit-tests/dds/d435i.py)，不是你手上那台的出厂标定。官方产品页标称深度 FOV 87°×58°、最大分辨率 Min-Z 约 0.28 m、理想距离 0.3–3 m；仿真远裁剪保留为 10 m。每台实机可通过 launch 参数覆盖内参。
+
+仿真起动后可以直接检查：
+
+```bash
+ros2 topic hz /camera/color/image_raw
+ros2 topic hz /camera/depth/image_raw
+ros2 topic echo --once /camera/depth/camera_info
+ros2 topic echo --once /camera/depth/points
+ros2 topic hz /camera/imu
+```
+
+### 7. 雷达位姿/盲区工具（新 CAD 安装后待重测）
+
+> **2026-09-29 更新：** `velodyne_link` 已从旧临时圆柱位姿替换为 STEP 精确位姿，光心升高约 121 mm。下面保留的 3.44 m / 3.23 m 与四倾角表是**旧安装的历史实测，不代表当前模型**。所有工具都从 TF 动态读取 `velodyne_link` 位姿，frame 名、扫描面 +10 mm 偏移和话题未变，因此功能仍兼容；需在 Linux/ROS/Gazebo 环境重跑后再替换历史表。
 
 工具都在 `scripts/` 下，仿真运行时执行：
 
@@ -415,7 +460,7 @@ z(pitch) = 0.911 + (h/2)·cos(pitch) + r·sin(pitch) = 0.911 + 0.036·cos(pitch)
 
 ---
 
-### 8. 四种雷达姿态对比（供 SLAM / 导航选型）
+### 8. 四种雷达姿态对比（旧安装历史数据）
 
 雷达倾角就是一个参数 `lidar_pitch`（度，正值 = 朝车头即 `base_frame_link` 的 −Y 下倾），启动时传即可，换角度不用重新编译：
 
@@ -451,14 +496,13 @@ ros2 launch ag_robot_description gazebo.launch.py rviz:=false lidar_pitch:=35
 #### SLAM / 导航侧怎么接
 
 - 点云的 `frame_id` **恒为 `velodyne_link`**，它相对 `base_link` 的位姿由 TF 实时给出（含倾角）。**SLAM 配置里雷达 frame 填 `velodyne_link`、外参走 TF，换姿态时配置文件一个字都不用改。**
-- 起建图前先确认姿态：`ros2 run tf2_ros tf2_echo base_frame_link velodyne_link`，应看到对应 roll（0/15/25/35°）和 z（0.9470 / 0.9573 / 0.9624 / 0.9660 m）。
+- 起建图前先确认姿态：`ros2 run tf2_ros tf2_echo base_frame_link velodyne_link`，应看到对应 roll（0/15/25/35°）和新 CAD 安装 z（0.157000 / 0.169141 / 0.175455 / 0.180115 m）。
 - 复现上表：`bash scripts/lidar_pose_sweep.sh`（默认依次跑 0/15/25/35，每轮重启仿真，共约 6 分钟；脚本会先撤掉演示障碍物、并在检测到遮挡污染时自动重测）。
 
-> #### ⚠ 接入 SLAM 之前还需要补的三件事（当前仓库都还没有）
+> #### ⚠ 接入 SLAM 之前还需要配置的事
 >
-> 1. Gazebo 里给 `imu_link` 加 `<sensor type="imu">`（现在只有坐标系，没有传感器）；
-> 2. `gazebo.launch.py` 里桥接 `/imu/data`（现在只桥了 `/clock` 和雷达两个话题）；
-> 3. 装 `robot_localization` 跑 EKF，并把 `diff_drive_controller` 的 `enable_odom_tf` 改成 `false` —— 让 EKF 接管 `odom → base_link`，否则 TF 里 `base_link` 会同时有 `base_footprint` 和 `odom` 两个父节点（见八.1）。
+> 1. D435i 已在 Gazebo 发布 `/camera/imu`，不再需要为 `imu_link` 重复造一个仿真 IMU；实机需使用本机 IMU 标定。
+> 2. 装 `robot_localization` 跑 EKF，并解决 `diff_drive_controller` 的 `odom → base_link` 与当前静态 TF 双父问题（见八.1）。
 
 ---
 
@@ -479,14 +523,15 @@ ros2 launch ag_robot_description gazebo.launch.py rviz:=false lidar_pitch:=35
 
 ### 2. 其它
 
-1. **VLP-16 仍是临时几何**：扫描链路已接通，安装倾角可用 `lidar_pitch` 参数在 0–35° 间调整（见七.8）；正式 mesh 完成后替换外形并精调安装位姿。相机仍未接入。**SLAM 前置条件（IMU 传感器 / `/imu/data` 桥接 / EKF）见七.8 末尾。**
-2. **质量与惯量为估算**（见第六节），接实际控制器前建议用实测值替换。
-3. **升降台没有滑块本体**：CAD 里没有卡在 T 型槽里滑动的滑块零件，所以仿真里升降台是"悬空"滑动的，视觉上不贴合。
-4. **立柱不作联动**：几何完整保留，要接关节只需改 `base_frame_joint` 的 `type`。
+1. **D435i 参考标定不等于实机标定**：仿真默认值来自 librealsense 官方参考设备；拿到实机后要用该机 `camera_info` / librealsense 外参覆盖。
+2. **新雷达位姿尚未在 Linux Gazebo 重跑历史盲区表**：工具已保持 TF 动态读取与 frame/topic 兼容，但第七/八节的旧实测数字不得当作新 CAD 位姿的结果。
+3. **质量与惯量为估算**（见第六节），STEP 未携带密度/质量属性，接实际控制器前建议用实测值替换。
+4. **升降台没有滑块本体**：CAD 里没有卡在 T 型槽里滑动的滑块零件，所以仿真里升降台是"悬空"滑动的，视觉上不贴合。
+5. **立柱不作联动**：几何完整保留，要接关节只需改 `base_frame_joint` 的 `type`。
 
 ---
 
-## 九、更新记录（2026-09-25）
+## 九、更新记录
 
 | 修的问题 | 原因 | 结果 |
 |---|---|---|
@@ -500,14 +545,9 @@ ros2 launch ag_robot_description gazebo.launch.py rviz:=false lidar_pitch:=35
 | VLP-16 3D 雷达 | 正式 CAD 尚未完成 | 立柱顶部新增临时圆柱 link；Gazebo 16 线 GPU lidar、ROS 桥接、RViz 点云及演示障碍物已接通 |
 | 雷达倾角参数化 | 要对比四种雷达姿态做 SLAM 选型，逐姿态改文件太笨 | 新增 `lidar_pitch` 参数（0/15/25/35 与历史标签逐值一致）、两个 launch 透传、脚本改从 TF 读姿态；新增四姿态对比表与 `lidar_pose_sweep.sh`（见七.8）|
 | 雷达盲区实测 | 需要确认自遮挡与近场覆盖 | 实测三种姿态下本体遮挡 0 条射线；近场地面盲环半径 3.44 m、安装姿态实测倾斜 ≤0.01°，附可视锥面公式与实测脚本（见七.7） |
-
-### 2026-09-28：官方 PiPER 夹爪仿真适配
-
-- 保留官方夹爪基座/指爪的网格、质量、惯量、位姿和 0–0.10 m 总开度语义。
-- 给官方空 `gripper_link` 增加仅供 Gazebo 保留主关节的轻量虚拟惯量。
-- Gazebo 改用 Bullet Featherstone，由 SDF mimic constraint 驱动左右指爪。
-- 移除 `ros2_control` 中重复的 mimic 参数，`/joint_states` 保留官方关节名，RViz/TF 与 Gazebo 运动一致。
-- 实测两套夹爪控制器均能正常激活；1 号夹爪总开度 0.080 m 时两指分别约 +0.040/−0.040 m，2 号夹爪 0.060 m 时分别约 +0.030/−0.030 m，开合动作成功。
+| 2026-09-29 头部 CAD | 获得完整 STEP 装配 | 导出头壳 / D435i / VLP-16 精确 STL，按 STEP 坐标换算安装位姿，保留可复现导出脚本和 JSON 元数据 |
+| 2026-09-29 D435i | 需要建图、导航和抓取可用的深度节点 | 独立 RGB/Depth 内参、CameraInfo、深度点云、200 Hz IMU、ROS 光学帧和 ros_gz_bridge 话题全部接通 |
+| 2026-09-29 VLP-16 | 旧几何/位姿为临时值 | 替换为 STEP 精确网格和位姿；保留 `velodyne_link`、话题、扫描面 +10 mm 偏移及 TF 动态位姿测试兼容 |
 
 ---
 

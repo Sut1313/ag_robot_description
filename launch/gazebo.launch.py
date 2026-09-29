@@ -30,10 +30,31 @@ def generate_launch_description():
 
     # 树根是 base_footprint(不是 world), 所以 sdformat 不会把模型钉在世界坐标系上,
     # 差速驱动可以直接跑。use_gazebo:=true 只加 gz_ros2_control 的硬件接口和插件。
-    # lidar_pitch 透传给 xacro: xacro 在 launch 时才展开, 所以换雷达倾角不需要重新编译。
+    # lidar_pitch 与 D435i 参考内参都在 launch 时透传给 xacro；拿到实机标定后
+    # 可直接从命令行覆盖，不需要改 URDF 或重新编译。
     robot_description = ParameterValue(
-        Command(['xacro ', xacro_file, ' use_gazebo:=true lidar_pitch:=',
-                 LaunchConfiguration('lidar_pitch')]),
+        Command([
+            'xacro ', xacro_file,
+            ' use_gazebo:=true lidar_pitch:=', LaunchConfiguration('lidar_pitch'),
+            ' camera_depth_width:=', LaunchConfiguration('camera_depth_width'),
+            ' camera_depth_height:=', LaunchConfiguration('camera_depth_height'),
+            ' camera_depth_fx:=', LaunchConfiguration('camera_depth_fx'),
+            ' camera_depth_fy:=', LaunchConfiguration('camera_depth_fy'),
+            ' camera_depth_cx:=', LaunchConfiguration('camera_depth_cx'),
+            ' camera_depth_cy:=', LaunchConfiguration('camera_depth_cy'),
+            ' camera_depth_hfov:=', LaunchConfiguration('camera_depth_hfov'),
+            ' camera_color_width:=', LaunchConfiguration('camera_color_width'),
+            ' camera_color_height:=', LaunchConfiguration('camera_color_height'),
+            ' camera_color_fx:=', LaunchConfiguration('camera_color_fx'),
+            ' camera_color_fy:=', LaunchConfiguration('camera_color_fy'),
+            ' camera_color_cx:=', LaunchConfiguration('camera_color_cx'),
+            ' camera_color_cy:=', LaunchConfiguration('camera_color_cy'),
+            ' camera_color_hfov:=', LaunchConfiguration('camera_color_hfov'),
+            ' camera_clip_near:=', LaunchConfiguration('camera_clip_near'),
+            ' camera_clip_far:=', LaunchConfiguration('camera_clip_far'),
+            ' camera_update_rate:=', LaunchConfiguration('camera_update_rate'),
+            ' camera_imu_update_rate:=', LaunchConfiguration('camera_imu_update_rate'),
+        ]),
         value_type=str)
 
     gazebo_gui = LaunchConfiguration('gazebo_gui')
@@ -77,6 +98,24 @@ def generate_launch_description():
         ],
         output='screen')
 
+    # 独立 RGB camera 与 RGBD depth camera 发布各自 CameraInfo。话题使用
+    # realsense2_camera 常见命名，建图、导航和抓取节点可直接订阅。
+    depth_camera_bridge = Node(
+        package='ros_gz_bridge', executable='parameter_bridge',
+        name='realsense_d435i_bridge',
+        arguments=[
+            '/camera/color/image_raw@sensor_msgs/msg/Image[gz.msgs.Image',
+            '/camera/color/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo',
+            '/camera/depth/depth_image@sensor_msgs/msg/Image[gz.msgs.Image',
+            '/camera/depth/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo',
+            '/camera/depth/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked',
+            '/camera/imu@sensor_msgs/msg/Imu[gz.msgs.IMU',
+        ],
+        remappings=[
+            ('/camera/depth/depth_image', '/camera/depth/image_raw'),
+        ],
+        output='screen')
+
     spawn = Node(
         package='ros_gz_sim', executable='create',
         arguments=['-topic', 'robot_description', '-name', 'AG_robot', '-z', SPAWN_Z],
@@ -103,6 +142,30 @@ def generate_launch_description():
         DeclareLaunchArgument('lidar_pitch', default_value='0',
                               description='雷达朝车头下倾角度(度), 正值=下倾; '
                                           '已验证 0/15/25/35, 任意角度均可, 换角度无需重新编译'),
+        # librealsense 官方 D435i 参考设备，848x480@30 Hz。每台实机的标定值
+        # 会略有差异，所以全部参数仍可在 launch 命令行覆盖。
+        DeclareLaunchArgument('camera_depth_width', default_value='848'),
+        DeclareLaunchArgument('camera_depth_height', default_value='480'),
+        DeclareLaunchArgument('camera_depth_fx', default_value='418.2646789550781'),
+        DeclareLaunchArgument('camera_depth_fy', default_value='418.2646789550781'),
+        DeclareLaunchArgument('camera_depth_cx', default_value='424.1576232910156'),
+        DeclareLaunchArgument('camera_depth_cy', default_value='238.23983764648438'),
+        DeclareLaunchArgument('camera_depth_hfov', default_value='1.5844149256643074'),
+        DeclareLaunchArgument('camera_color_width', default_value='848'),
+        DeclareLaunchArgument('camera_color_height', default_value='480'),
+        DeclareLaunchArgument('camera_color_fx', default_value='605.3924560546875'),
+        DeclareLaunchArgument('camera_color_fy', default_value='605.6131591796875'),
+        DeclareLaunchArgument('camera_color_cx', default_value='428.64471435546875'),
+        DeclareLaunchArgument('camera_color_cy', default_value='241.26548767089844'),
+        DeclareLaunchArgument('camera_color_hfov', default_value='1.2219513360956136'),
+        DeclareLaunchArgument('camera_clip_near', default_value='0.28',
+                              description='D435i 最大分辨率 Min-Z (m)'),
+        DeclareLaunchArgument('camera_clip_far', default_value='10.0',
+                              description='D435i 仿真远裁剪距离(m)；官方理想距离为 0.3..3 m'),
+        DeclareLaunchArgument('camera_update_rate', default_value='30.0',
+                              description='D435i Color/Depth 仿真帧率(Hz)'),
+        DeclareLaunchArgument('camera_imu_update_rate', default_value='200.0',
+                              description='D435i IMU 仿真频率(Hz)，官方支持 200/400'),
 
         LogInfo(msg=['AG_robot: 雷达安装倾角 lidar_pitch = ',
                      LaunchConfiguration('lidar_pitch'), ' 度 (正值=朝车头下倾)']),
@@ -111,6 +174,7 @@ def generate_launch_description():
         gz_sim_headless,
         clock_bridge,
         lidar_bridge,
+        depth_camera_bridge,
 
         Node(package='rviz2', executable='rviz2',
              arguments=['-d', rviz_cfg],

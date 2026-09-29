@@ -36,10 +36,8 @@
   </xacro:macro>
 
   <!-- PiPER 夹爪的主关节表示两指总开口宽度（0..0.10 m）。
-       两个指爪关节是 mimic 从关节，仅暴露原名状态接口，不单独接受命令。
-       联动由 URDF <mimic> 转换出的 SDF mimic constraint 完成，所以这里不再写
-       gz_ros2_control 的 mimic 参数。否则当前 Humble 插件会把 /joint_states 中的
-       关节改名为 *_mimic，导致 robot_state_publisher 无法更新指爪 TF。 -->
+       两个指爪关节是 mimic 从关节，按 gz_ros2_control 要求仅暴露状态接口，
+       不允许控制器单独命令左右手指。 -->
   <xacro:macro name="ctl_gripper" params="prefix">
     <joint name="${prefix}gripper">
       <command_interface name="position">
@@ -51,11 +49,15 @@
       <state_interface name="effort"/>
     </joint>
     <joint name="${prefix}gripper_joint1">
+      <param name="mimic">${prefix}gripper</param>
+      <param name="multiplier">0.5</param>
       <state_interface name="position"/>
       <state_interface name="velocity"/>
       <state_interface name="effort"/>
     </joint>
     <joint name="${prefix}gripper_joint2">
+      <param name="mimic">${prefix}gripper</param>
+      <param name="multiplier">-0.5</param>
       <state_interface name="position"/>
       <state_interface name="velocity"/>
       <state_interface name="effort"/>
@@ -107,7 +109,7 @@
   <xacro:wheel_gz i="1"/><xacro:wheel_gz i="2"/>
   <xacro:wheel_gz i="3"/><xacro:wheel_gz i="4"/>
 
-  <!-- Velodyne VLP-16 临时仿真参数（当前官方 VLP-16 规格）：
+  <!-- Velodyne VLP-16 仿真参数。外形和安装位姿来自 STEP，扫描参数沿用现有配置：
        16 线，水平 360°，垂直 40°，最大量程 200 m，精度 ±3 cm，最高 20 Hz。
        本仿真采用 10 Hz × 1800 水平采样 × 16 线 = 288000 点/秒；
        需要模拟最大帧率时可把 update_rate 改为 20（约 576000 点/秒）。 -->
@@ -146,6 +148,103 @@
           <stddev>0.01</stddev>
         </noise>
       </lidar>
+    </sensor>
+  </gazebo>
+
+  <!-- Intel RealSense D435i: 独立 Color + RGBD(Depth/PointCloud) + IMU。
+       Gazebo camera 沿传感器 +X 看；optical_frame_id 把消息头切换到 ROS 光学帧
+       (+X 右、+Y 下、+Z 前)。内参默认为 librealsense 官方 D435i 参考设备的
+       848x480 profile，SDF lens/intrinsics 使 CameraInfo 的 K/P 与渲染投影一致。
+       RGBD 自带的 RGB 图像只用于彩色点云生成；对外 RGB 话题由独立 color sensor
+       发布，因此 Color 和 Depth 不会共用错误的内参。 -->
+  <gazebo reference="camera_link">
+    <sensor name="realsense_d435i_depth" type="rgbd_camera">
+      <pose>0 0 0 0 0 0</pose>
+      <topic>camera/depth</topic>
+      <gz_frame_id>camera_depth_frame</gz_frame_id>
+      <update_rate>$(arg camera_update_rate)</update_rate>
+      <always_on>true</always_on>
+      <visualize>true</visualize>
+      <camera>
+        <horizontal_fov>$(arg camera_depth_hfov)</horizontal_fov>
+        <image>
+          <width>$(arg camera_depth_width)</width>
+          <height>$(arg camera_depth_height)</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>$(arg camera_clip_near)</near>
+          <far>$(arg camera_clip_far)</far>
+        </clip>
+        <depth_camera>
+          <clip>
+            <near>$(arg camera_clip_near)</near>
+            <far>$(arg camera_clip_far)</far>
+          </clip>
+        </depth_camera>
+        <lens>
+          <intrinsics>
+            <fx>$(arg camera_depth_fx)</fx>
+            <fy>$(arg camera_depth_fy)</fy>
+            <cx>$(arg camera_depth_cx)</cx>
+            <cy>$(arg camera_depth_cy)</cy>
+            <s>0.0</s>
+          </intrinsics>
+        </lens>
+        <distortion>
+          <k1>0.0</k1><k2>0.0</k2><k3>0.0</k3>
+          <p1>0.0</p1><p2>0.0</p2>
+          <center>0.5 0.5</center>
+        </distortion>
+        <optical_frame_id>camera_depth_optical_frame</optical_frame_id>
+      </camera>
+    </sensor>
+
+    <sensor name="realsense_d435i_color" type="camera">
+      <pose>-0.000217729917 0.015078110620 0.000010675736
+            -0.000407617216 0.000331054855 -0.003084785990</pose>
+      <topic>camera/color/image_raw</topic>
+      <gz_frame_id>camera_color_frame</gz_frame_id>
+      <update_rate>$(arg camera_update_rate)</update_rate>
+      <always_on>true</always_on>
+      <visualize>true</visualize>
+      <camera>
+        <horizontal_fov>$(arg camera_color_hfov)</horizontal_fov>
+        <image>
+          <width>$(arg camera_color_width)</width>
+          <height>$(arg camera_color_height)</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>$(arg camera_clip_near)</near>
+          <far>$(arg camera_clip_far)</far>
+        </clip>
+        <lens>
+          <intrinsics>
+            <fx>$(arg camera_color_fx)</fx>
+            <fy>$(arg camera_color_fy)</fy>
+            <cx>$(arg camera_color_cx)</cx>
+            <cy>$(arg camera_color_cy)</cy>
+            <s>0.0</s>
+          </intrinsics>
+        </lens>
+        <distortion>
+          <k1>0.0</k1><k2>0.0</k2><k3>0.0</k3>
+          <p1>0.0</p1><p2>0.0</p2>
+          <center>0.5 0.5</center>
+        </distortion>
+        <camera_info_topic>camera/color/camera_info</camera_info_topic>
+        <optical_frame_id>camera_color_optical_frame</optical_frame_id>
+      </camera>
+    </sensor>
+
+    <sensor name="realsense_d435i_imu" type="imu">
+      <pose>-0.011740000 -0.005520000 0.005100000 0 0 0</pose>
+      <topic>camera/imu</topic>
+      <gz_frame_id>camera_imu_frame</gz_frame_id>
+      <update_rate>$(arg camera_imu_update_rate)</update_rate>
+      <always_on>true</always_on>
+      <visualize>false</visualize>
     </sensor>
   </gazebo>
 

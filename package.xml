@@ -3,9 +3,9 @@
   <name>ag_robot_description</name>
   <version>0.1.0</version>
   <description>
-    AG_robot: the fourwd_car chassis with the piper lift upper assembly
-    (guide rails + column + prismatic lift + two AgileX PiPER arms) mounted at the front.
-    Includes a provisional Velodyne VLP-16 3D lidar link and Gazebo point-cloud simulation.
+    AG_robot: four-wheel mobile manipulator with a lift, two AgileX PiPER arms,
+    a CAD-derived protective head, an Intel RealSense D435i RGB-D/IMU sensor,
+    and a Velodyne VLP-16 with Gazebo Harmonic sensor simulation.
   </description>
   <maintainer email="323442660+Sut1313@users.noreply.github.com">Sut1313</maintainer>
   <license>MIT</license>

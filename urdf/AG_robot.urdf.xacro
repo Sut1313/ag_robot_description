@@ -1,15 +1,16 @@
 <?xml version="1.0"?><!-- =====================================================================
-     AG_robot : 顶配独立悬挂四驱车底盘 + 升降立柱/导轨 + 两条松灵 PiPER 六轴臂
+     AG_robot : 四驱底盘 + 升降立柱/导轨 + 双 PiPER + 头部 RGB-D / 3D 雷达
 
      几何来源
        底盘与升降结构: D:\AG_robot\robot_model\升降平台.SLDASM 导出的 STEP
                        (升降平台.step 70.6 MB + 顶配独立悬挂四驱车.step 60.4 MB),
                        由 OpenCASCADE 提取体积/质心/包围盒并做网格
        机械臂:         官方 agx_arm_urdf/piper (urdf/piper_arm.xacro), 参数原文照搬
+       头部与传感器:   C:\Users\LENOVO\Desktop\robot_model(1).STEP (SolidWorks 2025)
 
      坐标系(本文件内部) = SolidWorks 装配体坐标:
-         +X = 左右,  +Y = 车头方向,  +Z = 竖直向上
-     注意这与 ROS 约定不同(x 前 y 左 z 上), 所以 base_joint 用 rpy=(0,0,-pi/2) 转进 ROS。
+         +X = 左右,  -Y = 车头方向,  +Z = 竖直向上
+     注意这与 ROS 约定不同(x 前 y 左 z 上), 所以 base_joint 用 rpy=(0,0,+pi/2) 转进 ROS。
 
      网格单位不一样, 别搞混:
        底盘/轮子/立柱/升降台 (chassis, wheel_*, base_frame, platform)  毫米 -> scale="0.001 0.001 0.001"
@@ -20,13 +21,17 @@
        └─ base_link                 整车底盘 (轮子/悬挂/电控/车架/顶板)
           ├─ wheel_1..4            四轮, continuous, 差速驱动
           ├─ base_frame_link       立柱+导轨+推杆 (固定)
+          │  ├─ head_link          130x130x128 mm 保护壳
+          │  │  ├─ camera_link     Intel RealSense D435i + RGB/Depth/IMU frames
+          │  │  └─ velodyne_link   VLP-16, 可用 lidar_pitch 做安装姿态试验
           │  └─ lift_platform_link 升降台, 沿立柱 Z 向滑动
           │     ├─ arm1_*          松灵 PiPER + 平行夹爪
           │     └─ arm2_*          松灵 PiPER + 平行夹爪
 
      传感器:
-       Velodyne VLP-16 3D 激光雷达暂用圆柱体代替正式网格，固定在立柱顶部正中心。
-       相机位置仍未确定，旧定义保留在 urdf/sensors_disabled.xacro 中但不启用。
+       头部保护壳、RealSense D435i 与 VLP-16 均使用 robot_model(1).STEP 的精确外形与安装位姿。
+       Gazebo RGB / Depth 分路建模；默认内参来自 librealsense 官方 D435i 848x480
+       参考设备数据，并保留为 xacro 参数，拿到本机标定后可直接覆盖。
      ===================================================================== -->
 <robot name="AG_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
 
@@ -48,20 +53,45 @@
   <xacro:arg name="use_gazebo"  default="false"/>
   <xacro:arg name="arm1_prefix" default="arm1_"/>
   <xacro:arg name="arm2_prefix" default="arm2_"/>
-  <!-- ═════════ 雷达安装倾角（参数化, 供 SLAM 对比四种姿态）═════════
-       lidar_pitch 单位: 度; 正值 = 朝车头方向(base_frame_link 的 -Y)下倾。
-       已验证 0(水平) / 15 / 25 / 35, 实际填任意角度都行。
-       切换方式: ros2 launch ag_robot_description gazebo.launch.py lidar_pitch:=25
-       —— xacro 在 launch 时才展开, 所以换角度不需要重新 colcon build。
-       joint 的 z 必须随倾角抬高, 否则倾斜圆柱的最低外缘会插进立柱顶面(z=0.911 m):
-           z(pitch) = 0.911 + (h/2)·cos(pitch) + r·sin(pitch),  h=0.072, r=0.0445
-       取值: 0°→0.947(水平版原值)  15°→0.9573  25°→0.9624  35°→0.9660
-             (35° 与历史提交 vlp16-tilt35 的 0.966013 一致) -->
+  <!-- ═════════ 雷达安装倾角（参数化, 供 SLAM 对比姿态）═════════
+       lidar_pitch 单位: 度; 正值 = 朝车头方向(head_link 的 -Y)下倾。
+       STEP 中默认水平安装。velodyne_link 仍取雷达本体高度中心，扫描面仍在 link +Z 10 mm，
+       因而原有 blind-zone / target-check 脚本的 frame 和 Z_SENSOR=0.010 均保持兼容。
+       精确网格相对 link: z=[-36,+36] mm、车头侧最远 y=-51.65 mm；倾斜时按此外廓
+       抬高中心，使最低点始终保持 STEP 默认的 z=-7 mm 嵌入量，不会额外穿入保护壳。
+       head_link 原点到雷达 CAD 底面为 121 mm，所以：
+         z(pitch) = 0.121 + 0.036*cos(pitch) + 0.05165*sin(pitch) -->
   <xacro:arg name="lidar_pitch" default="0"/>
   <xacro:property name="lidar_pitch_deg" value="$(arg lidar_pitch)"/>
   <xacro:property name="lidar_pitch_rad" value="${radians(float(lidar_pitch_deg))}"/>
   <xacro:property name="velodyne_z"
-                  value="${0.911 + 0.036*cos(lidar_pitch_rad) + 0.0445*sin(lidar_pitch_rad)}"/>
+                  value="${0.121 + 0.036*cos(lidar_pitch_rad) + 0.05165*sin(lidar_pitch_rad)}"/>
+
+  <!-- Intel RealSense D435i 仿真默认参数。
+       - 848x480@30 同时属于官方支持的 Depth(Z16) 和 Color(YUYV) profile。
+       - fx/fy/cx/cy 来自 librealsense unit-tests/dds/d435i.py 的官方参考设备。
+       - 内参和 RGB<->Depth 外参会有设备间差异；实机标定值优先，因此都保留
+         为启动参数，不需要改话题或消费端。
+       - near=0.28 m 是官方产品页给出的最大分辨率 Min-Z；far=10 m 是仿真上限，
+         官方建议的理想工作距离为 0.3..3 m。 -->
+  <xacro:arg name="camera_depth_width"       default="848"/>
+  <xacro:arg name="camera_depth_height"      default="480"/>
+  <xacro:arg name="camera_depth_fx"          default="418.2646789550781"/>
+  <xacro:arg name="camera_depth_fy"          default="418.2646789550781"/>
+  <xacro:arg name="camera_depth_cx"          default="424.1576232910156"/>
+  <xacro:arg name="camera_depth_cy"          default="238.23983764648438"/>
+  <xacro:arg name="camera_depth_hfov"        default="1.5844149256643074"/>
+  <xacro:arg name="camera_color_width"       default="848"/>
+  <xacro:arg name="camera_color_height"      default="480"/>
+  <xacro:arg name="camera_color_fx"          default="605.3924560546875"/>
+  <xacro:arg name="camera_color_fy"          default="605.6131591796875"/>
+  <xacro:arg name="camera_color_cx"          default="428.64471435546875"/>
+  <xacro:arg name="camera_color_cy"          default="241.26548767089844"/>
+  <xacro:arg name="camera_color_hfov"        default="1.2219513360956136"/>
+  <xacro:arg name="camera_clip_near"         default="0.28"/>
+  <xacro:arg name="camera_clip_far"          default="10.0"/>
+  <xacro:arg name="camera_update_rate"       default="30.0"/>
+  <xacro:arg name="camera_imu_update_rate"   default="200.0"/>
   <xacro:property name="arm1_prefix" value="$(arg arm1_prefix)"/>
   <xacro:property name="arm2_prefix" value="$(arg arm2_prefix)"/>
 
@@ -76,6 +106,8 @@
   <material name="alu"><color rgba="0.78 0.79 0.81 1.0"/></material>
   <material name="dark"><color rgba="0.22 0.22 0.24 1.0"/></material>
   <material name="velodyne_blue"><color rgba="0.05 0.22 0.42 1.0"/></material>
+  <!-- robot_model(1).STEP 的唯一 SolidWorks 表面色（87 个 styled item 完全一致）。 -->
+  <material name="cad_head_surface"><color rgba="0.792157 0.819608 0.933333 1.0"/></material>
   <!-- piper_arm.xacro 的 link2/link5 引用 accent, 本包必须自己定义一份,
        否则 urdf 解析会报 "material 'accent' undefined" 并退回 RViz 默认色。
        取值与 piper_lift_ws 那个包保持一致, 同样的两条臂用同一个配色。 -->
@@ -318,34 +350,127 @@
     </inertial>
   </link>
 
-  <!-- ═════════ Velodyne VLP-16 3D 激光雷达（临时几何）═════════
-       2026-09-25 实测 base_frame.stl 包围盒：
-         X = [-0.250, 0.250] m，Y = [-0.174797, -0.055] m，Z 顶面 = 0.911 m。
-       因此安装中心暂定为 (0, -0.114898, 0.947)：圆柱高 72 mm，底面正好落在立柱顶面。
-       直径 89 mm、高 72 mm、质量 0.59 kg 取自当前 VLP-16 官方规格页。
-       正式 CAD / mesh 完成后，只需替换本 link 的 visual/collision 并修正 joint origin。
-       Gazebo 的 16 线扫描器定义在 urdf/gazebo.xacro。 -->
-  <link name="velodyne_link">
+  <!-- ═════════ 头部保护壳（STEP 精确网格）═════════
+       STEP component: 头盔_原始备份_20260925_084324
+       base_frame_link 中的安装原点 = (0, -0.121796720, 0.911) m（壳体底面中心）
+       link 局部包围盒 = [-65,-65,0]..[65,65,128] mm。
+       STEP 没有导出密度 / 质量属性，1.0 kg 与惯量是均质包围盒估算，待实测后替换。 -->
+  <link name="head_link">
     <visual>
-      <geometry><cylinder radius="0.0445" length="0.072"/></geometry>
-      <material name="velodyne_blue"/>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/head_shell.stl"/></geometry>
+      <material name="cad_head_surface"/>
     </visual>
     <collision>
-      <geometry><cylinder radius="0.0445" length="0.072"/></geometry>
+      <origin xyz="0 0 0.064" rpy="0 0 0"/>
+      <geometry><box size="0.130 0.130 0.128"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 -0.000183071 0.071289575" rpy="0 0 0"/>
+      <mass value="1.0"/>
+      <inertia ixx="0.002773667" ixy="0" ixz="0"
+               iyy="0.002773667" iyz="0" izz="0.002816667"/>
+    </inertial>
+  </link>
+
+  <joint name="head_joint" type="fixed">
+    <parent link="base_frame_link"/>
+    <child link="head_link"/>
+    <origin xyz="0 -0.121796720 0.911" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ═════════ Intel RealSense D435i（STEP 精确网格 + REP-103 frames）═════════
+       STEP component origin 换算到 base_frame_link =
+         (0.006445351, -0.211853206, 0.991065428) m。
+       camera_link 采用 ROS REP-103: +X 前、+Y 左、+Z 上；在保护壳坐标中 yaw=-pi/2。
+       网格局部包围盒 = x[-25.05,0], y[-45,45], z[-12.5,12.5] mm，前表面即 x=0。
+       camera_depth_frame 取为设备主坐标；color/IMU 的默认外参来自 librealsense
+       官方 D435i 参考设备。光学帧均符合 ROS: +X 右、+Y 下、+Z 前。 -->
+  <link name="camera_link">
+    <visual>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/realsense_d435i.stl"/></geometry>
+      <material name="cad_head_surface"/>
+    </visual>
+    <collision>
+      <origin xyz="-0.012525 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.02505 0.090 0.025"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="-0.012949985 -0.000005603 0.000055389" rpy="0 0 0"/>
+      <mass value="0.072"/>
+      <inertia ixx="0.000052350" ixy="0" ixz="0"
+               iyy="0.000007515" iyz="0" izz="0.000052365"/>
+    </inertial>
+  </link>
+
+  <joint name="camera_joint" type="fixed">
+    <parent link="head_link"/>
+    <child link="camera_link"/>
+    <origin xyz="0.006445351 -0.090056487 0.080065428" rpy="0 0 -1.570796327"/>
+  </joint>
+
+  <link name="camera_color_frame"/>
+  <joint name="camera_color_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_color_frame"/>
+    <!-- 官方参考外参 Color->Depth 转成 REP-103 camera_link 坐标。
+         此处是参考设备值，实机 librealsense 导出值应优先。 -->
+    <origin xyz="-0.000217729917 0.015078110620 0.000010675736"
+            rpy="-0.000407617216 0.000331054855 -0.003084785990"/>
+  </joint>
+  <link name="camera_color_optical_frame"/>
+  <joint name="camera_color_optical_joint" type="fixed">
+    <parent link="camera_color_frame"/>
+    <child link="camera_color_optical_frame"/>
+    <origin xyz="0 0 0" rpy="-1.570796327 0 -1.570796327"/>
+  </joint>
+
+  <link name="camera_depth_frame"/>
+  <joint name="camera_depth_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_depth_frame"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+  <link name="camera_depth_optical_frame"/>
+  <joint name="camera_depth_optical_joint" type="fixed">
+    <parent link="camera_depth_frame"/>
+    <child link="camera_depth_optical_frame"/>
+    <origin xyz="0 0 0" rpy="-1.570796327 0 -1.570796327"/>
+  </joint>
+
+  <!-- D435i Motion->Depth 外参由机械图纸预标定。下值由官方参考设备的
+       optical 坐标 (+5.52,-5.10,-11.74) mm 转为 REP-103 body 坐标。
+       IMU 输出轴与 camera_link 保持一致，便于 robot_localization 直接使用。 -->
+  <link name="camera_imu_frame"/>
+  <joint name="camera_imu_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_imu_frame"/>
+    <origin xyz="-0.011740000 -0.005520000 0.005100000" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ═════════ Velodyne VLP-16（STEP 精确网格）═════════
+       STEP 默认本体中心在 base_frame_link (0, -0.121796720, 1.068) m；
+       局部包围盒 103.300 x 143.300 x 72 mm（后方插头使 Y 尺寸大于圆柱本体）。
+       仍沿用 0.59 kg；collision 用主体包络圆柱，避免复杂视觉网格拖慢物理引擎。 -->
+  <link name="velodyne_link">
+    <visual>
+      <geometry><mesh scale="${mesh_scale}" filename="package://ag_robot_description/meshes/vlp16.stl"/></geometry>
+      <material name="cad_head_surface"/>
+    </visual>
+    <collision>
+      <geometry><cylinder radius="0.051650" length="0.072"/></geometry>
     </collision>
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <mass value="0.59"/>
-      <inertia ixx="0.000547" ixy="0" ixz="0"
-               iyy="0.000547" iyz="0" izz="0.000584"/>
+      <inertia ixx="0.000648369" ixy="0" ixz="0"
+               iyy="0.000648369" iyz="0" izz="0.000786978"/>
     </inertial>
   </link>
 
   <joint name="velodyne_joint" type="fixed">
-    <parent link="base_frame_link"/>
+    <parent link="head_link"/>
     <child link="velodyne_link"/>
-    <!-- 位姿由 lidar_pitch 参数驱动, 见文件开头那段注释 -->
-    <origin xyz="0 -0.114898 ${velodyne_z}" rpy="${lidar_pitch_rad} 0 0"/>
+    <origin xyz="0 0 ${velodyne_z}" rpy="${lidar_pitch_rad} 0 0"/>
   </joint>
 
   <!-- ═════════ 两条松灵 PiPER 六轴臂 ═════════
@@ -378,7 +503,7 @@
   <xacro:piper_arm prefix="${arm2_prefix}" parent="lift_platform_link">
     <origin xyz="-0.190000 -0.247667 0.032000" rpy="0 0 -1.5707963"/>
   </xacro:piper_arm>
-  <!-- 旧版 2D 雷达 / 相机定义保留在 urdf/sensors_disabled.xacro，本模型不启用。 -->
+  <!-- 旧版底盘 2D 雷达 / 相机定义仍保留在 sensors_disabled.xacro，仅作历史参考。 -->
 
   <!-- <gazebo reference="base_link"><material>Gazebo/Grey</material></gazebo>   (已由 .obj 自带颜色取代; 若 Gazebo 不认 .obj 材质, 把这几行解开即可) -->
   <xacro:macro name="wheel_gz" params="i">
